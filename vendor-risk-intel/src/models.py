@@ -111,6 +111,7 @@ class SECFiling(BaseModel):
     accession_number: str
     description: str = ""
     risk_flags: list[str] = Field(default_factory=list)
+    url: Optional[str] = None
 
 
 # ── Internal Vendor Registry (synthetic data) ─────────────────────────────────

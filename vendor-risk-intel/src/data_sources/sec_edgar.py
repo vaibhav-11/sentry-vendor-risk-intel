@@ -99,13 +99,19 @@ async def fetch_recent_filings(
                 desc = desc_list[i] if i < len(desc_list) else ""
                 flags = _extract_risk_flags(desc)
 
+                accession_number = accn_list[i] if i < len(accn_list) else ""
+                filing_url = None
+                if accession_number:
+                    filing_url = f"https://www.sec.gov/edgar/search/#/q={accession_number}"
+
                 filings.append(SECFiling(
                     entity_id=entity_id,
                     form_type=form,
                     filed_at=filed_at,
-                    accession_number=accn_list[i] if i < len(accn_list) else "",
+                    accession_number=accession_number,
                     description=f"{form} filing — {date_list[i] if i < len(date_list) else 'unknown'}",
                     risk_flags=flags,
+                    url=filing_url,
                 ))
                 count += 1
 

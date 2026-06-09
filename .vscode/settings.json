@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd '/Users/vaibhavdixit/Docs master/Dev/Garage/sentry-vendor-risk-intel/vendor-risk-intel' && python3 -m py_compile src/dashboard/html_generator\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

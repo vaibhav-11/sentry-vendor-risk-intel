@@ -79,12 +79,21 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
                     dependency_strength=entity.importance_score / 10.0,
                 ))
 
-    # Add relationship from target to each Level-1 entity
+    # Add relationship from target to each Level-1 entity.
+    # Suppliers, logistics, and financial providers flow toward the target.
+    # Customers flow away from the target.
     for entity in entities:
         if entity.depth_level == 1:
+            if entity.entity_type in {EntityType.SUPPLIER, EntityType.LOGISTICS, EntityType.FINANCIAL}:
+                source_id = entity.id
+                dest_id = target_id
+            else:
+                source_id = target_id
+                dest_id = entity.id
+
             relationships.append(EntityRelationship(
-                source_id=target_id,
-                target_id=entity.id,
+                source_id=source_id,
+                target_id=dest_id,
                 relationship_type=entity.entity_type.value,
                 dependency_strength=entity.importance_score / 10.0,
             ))

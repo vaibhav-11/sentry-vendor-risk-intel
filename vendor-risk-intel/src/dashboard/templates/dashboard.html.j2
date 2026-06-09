@@ -79,19 +79,19 @@
     <div class="text-2xl font-bold text-white">{{ stats.total_entities }}</div>
     <div class="text-xs text-slate-400 mt-0.5">Entities Monitored</div>
   </div>
-  <div class="stat-card col-span-1" style="border-color:#ef4444">
+  <div id="card-critical" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#ef4444" onclick="selectRiskCategory('critical')">
     <div class="text-2xl font-bold text-red-400">{{ stats.critical_count }}</div>
     <div class="text-xs text-slate-400 mt-0.5">Critical Risk</div>
   </div>
-  <div class="stat-card col-span-1" style="border-color:#f97316">
+  <div id="card-high" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#f97316" onclick="selectRiskCategory('high')">
     <div class="text-2xl font-bold text-orange-400">{{ stats.high_count }}</div>
     <div class="text-xs text-slate-400 mt-0.5">High Risk</div>
   </div>
-  <div class="stat-card col-span-1" style="border-color:#eab308">
+  <div id="card-medium" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#eab308" onclick="selectRiskCategory('medium')">
     <div class="text-2xl font-bold text-yellow-400">{{ stats.medium_count }}</div>
     <div class="text-xs text-slate-400 mt-0.5">Medium Risk</div>
   </div>
-  <div class="stat-card col-span-1" style="border-color:#22c55e">
+  <div id="card-low" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#22c55e" onclick="selectRiskCategory('low')">
     <div class="text-2xl font-bold text-green-400">{{ stats.low_count }}</div>
     <div class="text-xs text-slate-400 mt-0.5">Low Risk</div>
   </div>
@@ -186,6 +186,7 @@
             <th class="py-2 pr-3">Operational</th>
             <th class="py-2 pr-3">Compliance</th>
             <th class="py-2 pr-3">Geopolitical</th>
+            <th class="py-2 pr-3">Evidence</th>
           </tr>
         </thead>
         <tbody id="scores-tbody" class="divide-y divide-slate-700/50 text-slate-300"></tbody>
@@ -289,6 +290,15 @@
       <div class="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wider">Risk Narrative</div>
       <p id="modal-narrative" class="text-sm text-slate-300 leading-relaxed"></p>
     </div>
+
+    <div class="bg-slate-900 rounded-xl p-4 mt-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-slate-400 uppercase tracking-wider">Supporting Evidence</span>
+      </div>
+      <div id="modal-evidence" class="space-y-2 text-sm text-slate-300">
+        <div class="text-slate-500">No supporting evidence links available.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -337,14 +347,9 @@ function initNetwork() {
     nodes: { shape: 'dot', borderWidth: 2, shadow: true },
     edges: { smooth: { type: 'curvedCW', roundness: 0.1 }, shadow: false },
   };
+
   const network = new vis.Network(container, { nodes, edges }, options);
-  network.on('click', params => {
-    if (params.nodes.length > 0) {
-      const nodeId = params.nodes[0];
-      const nodeData = VIS_NODES.find(n => n.id === nodeId);
-      if (nodeData && nodeData.meta) openModal(nodeData.meta);
-    }
-  });
+  window.network = network;
 }
 
 // ── Top risk list (sidebar) ────────────────────────────────────────────────
@@ -378,6 +383,12 @@ function openModal(meta) {
   document.getElementById('modal-score-val').textContent  = meta.score + '/100';
   document.getElementById('modal-score-bar').style.width  = meta.score + '%';
   document.getElementById('modal-score-bar').style.background = colour;
+  const evidenceContainer = document.getElementById('modal-evidence');
+  evidenceContainer.innerHTML = (meta.evidence && meta.evidence.length) ?
+    meta.evidence.map(e =>
+      `<div><a href="${e.url}" target="_blank" rel="noreferrer" class="text-blue-400 hover:text-blue-300">${e.type}: ${e.title}</a></div>`
+    ).join('') :
+    '<div class="text-slate-500">No supporting evidence links available.</div>';
   const setDim = (prefix, score, drivers) => {
     document.getElementById(`modal-${prefix}-bar`).style.width = score + '%';
     document.getElementById(`modal-${prefix}-val`).textContent  = score + '/100';
@@ -406,6 +417,9 @@ function renderScoresTable() {
     r.country.toLowerCase().includes(_tableFilter) ||
     r.type.toLowerCase().includes(_tableFilter)
   );
+  if (_selectedRiskLevel !== 'all') {
+    data = data.filter(r => r.level === _selectedRiskLevel);
+  }
   data.sort((a, b) => {
     const av = a[_sortKey], bv = b[_sortKey];
     const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
@@ -425,13 +439,45 @@ function renderScoresTable() {
       <td class="py-2 pr-3">${r.ops}</td>
       <td class="py-2 pr-3">${r.comp}</td>
       <td class="py-2 pr-3">${r.geo}</td>
+      <td class="py-2 pr-3">
+        ${r.evidence && r.evidence.length ? `<button onclick='openEntityModal(${JSON.stringify(r).replace(/'/g,'\\\'')})' class="px-2 py-1 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100">View</button>` : '—'}
+      </td>
     </tr>
   `).join('');
 }
 
 function sortTable(key) { _sortKey = key; _sortAsc = !_sortAsc; renderScoresTable(); }
 function filterTable() { _tableFilter = document.getElementById('table-search').value.toLowerCase(); renderScoresTable(); }
+function openEntityModal(meta) {
+  if (!meta) return;
+  showRadarForRow(meta);
+  openModal(meta);
+}
 
+let _selectedRiskLevel = 'all';
+function selectRiskCategory(level) {
+  if (_selectedRiskLevel === level) {
+    level = 'all';
+  }
+  _selectedRiskLevel = level;
+  switchTab('scores');
+  updateRiskCategoryCards();
+  renderScoresTable();
+}
+
+function updateRiskCategoryCards() {
+  ['critical','high','medium','low'].forEach(level => {
+    const card = document.getElementById(`card-${level}`);
+    if (!card) return;
+    if (_selectedRiskLevel === level) {
+      card.classList.add('bg-slate-700');
+      card.classList.remove('bg-slate-800');
+    } else {
+      card.classList.remove('bg-slate-700');
+      card.classList.add('bg-slate-800');
+    }
+  });
+}
 // ── Plotly charts ─────────────────────────────────────────────────────────
 function initCharts() {
   renderScoresTable();
@@ -499,7 +545,7 @@ function renderAlerts() {
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
             <span class="risk-badge risk-${a.severity}">${a.severity}</span>
-            <span class="text-sm font-semibold text-white">${a.alert_title}</span>
+            <span class="text-sm font-semibold text-white">${a.title}</span>
           </div>
           <div class="text-xs text-slate-400 mb-2">${a.entity} · Score ${a.score}/100 · ${a.triggered}</div>
           <p class="text-sm text-slate-300 mb-2">${a.summary}</p>
@@ -508,6 +554,12 @@ function renderAlerts() {
             <span class="text-slate-400">📤 Escalate to: <span class="text-blue-400 font-medium">${a.escalate}</span></span>
             <span class="text-slate-400">⏱ <span class="${timingColour[a.timing] || 'text-slate-200'}">${a.timing}</span></span>
           </div>
+          ${a.evidence && a.evidence.length ? `
+            <div class="mt-3 text-xs text-slate-300">
+              <div class="font-semibold text-slate-200 mb-1">Supporting evidence</div>
+              ${a.evidence.map(e => `<div><a href="${e.url}" target="_blank" rel="noreferrer" class="text-blue-400 hover:text-blue-300">${e.type}: ${e.title}</a></div>`).join('')}
+            </div>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -526,6 +578,12 @@ function filterAlerts(severity) {
 // ── Graph node highlight from sidebar ─────────────────────────────────────
 function highlightNodeByName(name) {
   switchTab('map');
+  const node = VIS_NODES.find(n => n.label === name || n.id === name);
+  if (node && window.network) {
+    window.network.selectNodes([node.id]);
+    window.network.focus(node.id, { scale: 1.2, animation: true });
+    if (node.meta) openModal(node.meta);
+  }
 }
 
 // ── Export ────────────────────────────────────────────────────────────────

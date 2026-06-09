@@ -61,6 +61,7 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
             f"Type: {entity.entity_type.value.title()}",
             f"Country: {entity.hq_country or 'Unknown'}",
         ]
+        evidence = _collect_entity_evidence(ps, entity.id)
         if score_obj:
             tooltip_parts += [
                 f"Risk Score: {score:.0f}/100",
@@ -68,6 +69,8 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
                 f"Financial: {score_obj.financial.score:.0f}",
                 f"Operational: {score_obj.operational.score:.0f}",
             ]
+        if evidence:
+            tooltip_parts.append(f"Evidence: {len(evidence)} link(s)")
 
         nodes.append({
             "id":    entity.id,
@@ -97,6 +100,7 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
                 "geo_score":   round(score_obj.geopolitical.score, 1) if score_obj else 0,
                 "fin_drivers": score_obj.financial.key_drivers if score_obj else [],
                 "ops_drivers": score_obj.operational.key_drivers if score_obj else [],
+                "evidence":    evidence,
             },
         })
     return nodes
@@ -120,6 +124,38 @@ def _build_vis_edges(ps: PipelineState) -> list[dict]:
     return edges
 
 
+def _collect_entity_evidence(ps: PipelineState, entity_id: str, limit: int = 3) -> list[dict]:
+    """Gather evidence links for an entity from footprints and filings."""
+    evidence = []
+    fp = ps.footprint_data.get(entity_id)
+    if not fp:
+        return evidence
+
+    for item in fp.news_items:
+        if item.url:
+            evidence.append({
+                "type": "News",
+                "title": item.title or item.source,
+                "source": item.source,
+                "url": item.url,
+            })
+            if len(evidence) >= limit:
+                return evidence
+
+    for filing in fp.sec_filings:
+        if filing.url:
+            evidence.append({
+                "type": "Filing",
+                "title": filing.description or filing.form_type,
+                "source": filing.form_type,
+                "url": filing.url,
+            })
+            if len(evidence) >= limit:
+                return evidence
+
+    return evidence
+
+
 def _build_risk_table(ps: PipelineState) -> list[dict]:
     """Sorted risk score table for the Risk Scores tab."""
     rows = []
@@ -127,17 +163,20 @@ def _build_risk_table(ps: PipelineState) -> list[dict]:
         score_obj = ps.risk_scores.get(entity.id)
         if not score_obj:
             continue
+        evidence = _collect_entity_evidence(ps, entity.id)
         rows.append({
-            "name":    entity.name,
-            "ticker":  entity.ticker or "—",
-            "type":    entity.entity_type.value.title(),
-            "country": entity.hq_country or "—",
-            "score":   round(score_obj.composite_score, 1),
-            "level":   score_obj.risk_level.value,
-            "fin":     round(score_obj.financial.score, 1),
-            "ops":     round(score_obj.operational.score, 1),
-            "comp":    round(score_obj.compliance.score, 1),
-            "geo":     round(score_obj.geopolitical.score, 1),
+            "entity_id": entity.id,
+            "name":      entity.name,
+            "ticker":    entity.ticker or "—",
+            "type":      entity.entity_type.value.title(),
+            "country":   entity.hq_country or "—",
+            "score":     round(score_obj.composite_score, 1),
+            "level":     score_obj.risk_level.value,
+            "fin":       round(score_obj.financial.score, 1),
+            "ops":       round(score_obj.operational.score, 1),
+            "comp":      round(score_obj.compliance.score, 1),
+            "geo":       round(score_obj.geopolitical.score, 1),
+            "evidence":  evidence,
         })
     rows.sort(key=lambda r: r["score"], reverse=True)
     return rows
@@ -145,8 +184,10 @@ def _build_risk_table(ps: PipelineState) -> list[dict]:
 
 def _build_alerts_data(ps: PipelineState) -> list[dict]:
     """Serialise alerts for the Alerts tab."""
-    return [
-        {
+    alerts = []
+    for a in ps.alerts:
+        evidence = _collect_entity_evidence(ps, a.entity_id)
+        alerts.append({
             "id":        a.alert_id,
             "entity":    a.entity_name,
             "title":     a.alert_title,
@@ -157,9 +198,9 @@ def _build_alerts_data(ps: PipelineState) -> list[dict]:
             "timing":    a.time_sensitivity,
             "score":     round(a.triggering_score, 1),
             "triggered": a.triggered_at.strftime("%Y-%m-%d %H:%M UTC"),
-        }
-        for a in ps.alerts
-    ]
+            "evidence":  evidence,
+        })
+    return alerts
 
 
 def _build_summary_stats(ps: PipelineState) -> dict:
