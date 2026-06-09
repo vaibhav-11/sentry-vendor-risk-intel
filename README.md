@@ -209,11 +209,3 @@ MAX_DEPTH=3                 # Supply chain depth
 
 ---
 
-## Hackathon — Day Plan
-
-| Day | Focus |
-|-----|-------|
-| 1 | Push repo · Test mock pipeline locally · Verify HTML dashboard renders |
-| 2 | AMD setup · vLLM server · Run real Apple pipeline · Tune prompts |
-| 3 | Iterate on risk scoring · Fine-tune alerts · Improve dashboard UI |
-| 4 | Polish demo · Record walkthrough · Prepare presentation |
