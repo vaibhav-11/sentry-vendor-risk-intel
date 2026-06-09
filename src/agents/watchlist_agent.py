@@ -66,34 +66,38 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
         entities.append(entity)
         name_to_id[name.lower()] = entity_id
 
-    # Resolve parent IDs now that all entities are created
+    # Resolve parent IDs now that all entities are created.
+    # Edge direction encodes goods/services flow:
+    #   Supplier chain:  deeper_supplier → parent_supplier  (flows TOWARD target)
+    #   Customer chain:  parent_customer → deeper_customer  (flows AWAY from target)
+    _UPSTREAM = (EntityType.SUPPLIER, EntityType.LOGISTICS, EntityType.PARTNER)
+
     for entity in entities:
         if entity.relationship_to_parent:
             parent_id = name_to_id.get(entity.relationship_to_parent.lower())
             if parent_id:
                 entity.parent_id = parent_id
+                if entity.entity_type in _UPSTREAM:
+                    src, tgt = entity.id, parent_id   # L2_supplier → L1_supplier
+                else:
+                    src, tgt = parent_id, entity.id   # L1_customer → L2_customer
                 relationships.append(EntityRelationship(
-                    source_id=parent_id,
-                    target_id=entity.id,
+                    source_id=src,
+                    target_id=tgt,
                     relationship_type=entity.entity_type.value,
                     dependency_strength=entity.importance_score / 10.0,
                 ))
 
-    # Add relationship from target to each Level-1 entity.
-    # Suppliers, logistics, and financial providers flow toward the target.
-    # Customers flow away from the target.
+    # Add target ↔ Level-1 entity relationships with correct flow direction
     for entity in entities:
         if entity.depth_level == 1:
-            if entity.entity_type in {EntityType.SUPPLIER, EntityType.LOGISTICS, EntityType.FINANCIAL}:
-                source_id = entity.id
-                dest_id = target_id
+            if entity.entity_type in _UPSTREAM:
+                src, tgt = entity.id, target_id   # supplier/partner → target
             else:
-                source_id = target_id
-                dest_id = entity.id
-
+                src, tgt = target_id, entity.id   # target → customer/financial
             relationships.append(EntityRelationship(
-                source_id=source_id,
-                target_id=dest_id,
+                source_id=src,
+                target_id=tgt,
                 relationship_type=entity.entity_type.value,
                 dependency_strength=entity.importance_score / 10.0,
             ))
