@@ -1,0 +1,44 @@
+# Risk dimension weights — must sum to 1.0
+# Adjust per industry/use-case without touching code
+
+dimensions:
+  financial:
+    weight: 0.30
+    sub_factors:
+      altman_z_score: 0.35       # Financial distress predictor
+      revenue_growth_trend: 0.25  # YoY revenue momentum
+      debt_to_equity: 0.20        # Leverage risk
+      current_ratio: 0.20         # Liquidity
+
+  operational:
+    weight: 0.30
+    sub_factors:
+      spend_concentration: 0.30   # % of total spend on this vendor
+      single_source_flag: 0.25    # No alternate supplier exists
+      geographic_risk: 0.25       # Country risk index
+      bcp_maturity: 0.20          # Business continuity plan score
+
+  compliance:
+    weight: 0.20
+    sub_factors:
+      sanctions_flag: 0.40        # OFAC / UN sanctions list
+      audit_score: 0.30           # Last internal audit result
+      certification_gaps: 0.30    # Missing ISO/SOC2/etc
+
+  geopolitical:
+    weight: 0.20
+    sub_factors:
+      country_risk_index: 0.40    # Basel AML index / World Bank
+      trade_war_exposure: 0.35    # Tariff / export control risk
+      political_stability: 0.25   # EIU / World Bank stability score
+
+# Score thresholds for alert generation
+thresholds:
+  critical: 80
+  high: 65
+  medium: 45
+  low: 0
+
+# Cascading risk multiplier — applied when a critical node's
+# risk score exceeds the critical threshold
+cascade_multiplier: 1.4

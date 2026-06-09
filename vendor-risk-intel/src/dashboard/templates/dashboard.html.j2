@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vendor Risk Intel — {{ target_company }}</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- vis.js Network -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+  <link  href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet"/>
+
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: { 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body { background-color: #0f172a; color: #f1f5f9; font-family: 'Inter', system-ui, sans-serif; }
+    #network-container { width: 100%; height: 520px; background: #1e293b; border-radius: 0.5rem; border: 1px solid #334155; }
+    .tab-btn { transition: all 0.2s; }
+    .tab-btn.active { background-color: #3b82f6; color: white; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    .risk-badge { padding: 2px 10px; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+    .risk-critical { background:#ef4444; color:#fff; }
+    .risk-high     { background:#f97316; color:#fff; }
+    .risk-medium   { background:#eab308; color:#1e293b; }
+    .risk-low      { background:#22c55e; color:#fff; }
+    .risk-unknown  { background:#64748b; color:#fff; }
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:50; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .score-bar-track { background:#334155; border-radius:9999px; height:6px; width:100%; }
+    .score-bar-fill  { height:6px; border-radius:9999px; transition: width 0.6s ease; }
+    tr:hover { background: #1e293b; }
+    .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+
+<body class="min-h-screen p-4">
+
+<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
+<header class="flex items-center justify-between mb-6 px-2">
+  <div>
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">VR</div>
+      <h1 class="text-xl font-bold text-white">Vendor Risk Intel</h1>
+      <span class="text-slate-400 text-sm">|</span>
+      <h2 class="text-xl font-semibold text-blue-400">{{ target_company }}</h2>
+    </div>
+    <p class="text-slate-400 text-xs mt-1 ml-11">Generated {{ generated_at }} &nbsp;·&nbsp; Run ID: {{ run_id }}</p>
+  </div>
+  <div class="flex gap-2">
+    <button onclick="exportDashboard()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-sm rounded-lg text-slate-200 transition">⬇ Export HTML</button>
+    {% if error_count > 0 %}
+    <span class="px-3 py-1.5 bg-yellow-900 text-yellow-300 text-xs rounded-lg">⚠ {{ error_count }} pipeline warning(s)</span>
+    {% endif %}
+  </div>
+</header>
+
+<!-- ── SUMMARY STAT CARDS ───────────────────────────────────────────────────── -->
+<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+  <div class="stat-card col-span-1">
+    <div class="text-2xl font-bold text-white">{{ stats.total_entities }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Entities Monitored</div>
+  </div>
+  <div class="stat-card col-span-1" style="border-color:#ef4444">
+    <div class="text-2xl font-bold text-red-400">{{ stats.critical_count }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Critical Risk</div>
+  </div>
+  <div class="stat-card col-span-1" style="border-color:#f97316">
+    <div class="text-2xl font-bold text-orange-400">{{ stats.high_count }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">High Risk</div>
+  </div>
+  <div class="stat-card col-span-1" style="border-color:#eab308">
+    <div class="text-2xl font-bold text-yellow-400">{{ stats.medium_count }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Medium Risk</div>
+  </div>
+  <div class="stat-card col-span-1" style="border-color:#22c55e">
+    <div class="text-2xl font-bold text-green-400">{{ stats.low_count }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Low Risk</div>
+  </div>
+  <div class="stat-card col-span-1">
+    <div class="text-2xl font-bold text-white">{{ stats.avg_score }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Avg Risk Score</div>
+  </div>
+  <div class="stat-card col-span-1" style="border-color:#f97316">
+    <div class="text-2xl font-bold text-orange-400">{{ stats.alert_count }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Active Alerts</div>
+  </div>
+  <div class="stat-card col-span-1" style="border-color:#ef4444">
+    <div class="text-2xl font-bold text-red-400">{{ stats.spof_count }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">Single-Point Failures</div>
+  </div>
+</div>
+
+<!-- ── TAB NAV ──────────────────────────────────────────────────────────────── -->
+<div class="flex gap-1 mb-4 bg-slate-800 p-1 rounded-lg w-fit">
+  <button class="tab-btn active px-4 py-2 rounded-md text-sm font-medium" onclick="switchTab('map')">🗺 Supply Chain Map</button>
+  <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-slate-300" onclick="switchTab('scores')">📊 Risk Scores</button>
+  <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-slate-300" onclick="switchTab('alerts')">🔔 Alerts <span id="alert-badge" class="ml-1 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{{ stats.alert_count }}</span></button>
+  <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-slate-300" onclick="switchTab('report')">📋 Executive Report</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB 1: SUPPLY CHAIN MAP                                                   -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-map" class="tab-pane active">
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+    <!-- Network Graph (2/3 width) -->
+    <div class="xl:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-slate-200">Supply Chain Network</h3>
+        <div class="flex gap-2 items-center text-xs text-slate-400">
+          <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Critical
+          <span class="w-3 h-3 rounded-full bg-orange-500 inline-block"></span> High
+          <span class="w-3 h-3 rounded-full bg-yellow-400 inline-block"></span> Medium
+          <span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> Low
+        </div>
+      </div>
+      <div id="network-container"></div>
+      <p class="text-xs text-slate-500 mt-2">Click any node to view detailed risk profile. Red edges indicate single-source dependencies.</p>
+    </div>
+
+    <!-- Top Risk Entities sidebar (1/3 width) -->
+    <div class="xl:col-span-1 bg-slate-800 rounded-xl border border-slate-700 p-4 overflow-y-auto" style="max-height:590px">
+      <h3 class="text-sm font-semibold text-slate-200 mb-3">Top Risk Entities</h3>
+      <div id="top-risk-list" class="space-y-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB 2: RISK SCORES                                                        -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-scores" class="tab-pane">
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+    <!-- Bar chart -->
+    <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
+      <h3 class="text-sm font-semibold text-slate-200 mb-3">Composite Risk Score — Top 15 Entities</h3>
+      <div id="bar-chart" style="height:340px"></div>
+    </div>
+    <!-- Dimension radar for selected entity -->
+    <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
+      <h3 class="text-sm font-semibold text-slate-200 mb-1">Risk Dimension Breakdown</h3>
+      <p class="text-xs text-slate-400 mb-3">Click any row in the table below to inspect dimensions</p>
+      <div id="radar-chart" style="height:320px"></div>
+    </div>
+  </div>
+
+  <!-- Scores Table -->
+  <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-slate-200">Full Risk Score Table</h3>
+      <input id="table-search" type="text" placeholder="Filter entities…"
+             class="bg-slate-700 text-sm text-slate-200 px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:border-blue-500 w-48"
+             oninput="filterTable()"/>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs text-slate-400 border-b border-slate-700">
+            <th class="py-2 pr-4 cursor-pointer" onclick="sortTable('name')">Entity ↕</th>
+            <th class="py-2 pr-3">Ticker</th>
+            <th class="py-2 pr-3">Type</th>
+            <th class="py-2 pr-3">Country</th>
+            <th class="py-2 pr-3 cursor-pointer" onclick="sortTable('score')">Score ↕</th>
+            <th class="py-2 pr-3">Level</th>
+            <th class="py-2 pr-3">Financial</th>
+            <th class="py-2 pr-3">Operational</th>
+            <th class="py-2 pr-3">Compliance</th>
+            <th class="py-2 pr-3">Geopolitical</th>
+          </tr>
+        </thead>
+        <tbody id="scores-tbody" class="divide-y divide-slate-700/50 text-slate-300"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB 3: ALERTS                                                             -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-alerts" class="tab-pane">
+  <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-sm font-semibold text-slate-200">Active Risk Alerts</h3>
+      <div class="flex gap-2 text-xs">
+        <button onclick="filterAlerts('all')"      class="alert-filter-btn active-filter px-2 py-1 rounded bg-blue-600 text-white">All</button>
+        <button onclick="filterAlerts('critical')" class="alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Critical</button>
+        <button onclick="filterAlerts('high')"     class="alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">High</button>
+        <button onclick="filterAlerts('medium')"   class="alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Medium</button>
+      </div>
+    </div>
+    <div id="alerts-container" class="space-y-3"></div>
+    <p id="no-alerts-msg" class="text-slate-400 text-sm text-center py-8 hidden">No alerts for selected severity.</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB 4: EXECUTIVE REPORT                                                   -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-report" class="tab-pane">
+  <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h3 class="text-lg font-semibold text-white">Executive Risk Briefing</h3>
+        <p class="text-xs text-slate-400 mt-0.5">{{ target_company }} · {{ generated_at }}</p>
+      </div>
+      <button onclick="printReport()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-sm rounded-lg text-slate-200">🖨 Print</button>
+    </div>
+    <div id="report-content" class="prose prose-invert max-w-none text-slate-300 leading-relaxed space-y-3">
+      {{ report_html | safe }}
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- ENTITY DETAIL MODAL                                                       -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="entity-modal" class="modal-overlay" onclick="closeModal(event)">
+  <div class="bg-slate-800 border border-slate-600 rounded-2xl w-full max-w-2xl mx-4 p-6 shadow-2xl" onclick="event.stopPropagation()">
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <h2 id="modal-name" class="text-lg font-bold text-white"></h2>
+        <p id="modal-meta" class="text-sm text-slate-400 mt-0.5"></p>
+      </div>
+      <button onclick="document.getElementById('entity-modal').classList.remove('open')" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+
+    <!-- Score gauge -->
+    <div class="bg-slate-900 rounded-xl p-4 mb-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm text-slate-400">Composite Risk Score</span>
+        <span id="modal-score-badge" class="risk-badge"></span>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="score-bar-track flex-1">
+          <div id="modal-score-bar" class="score-bar-fill"></div>
+        </div>
+        <span id="modal-score-val" class="text-2xl font-bold text-white w-16 text-right"></span>
+      </div>
+    </div>
+
+    <!-- Dimension scores -->
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="bg-slate-900 rounded-lg p-3">
+        <div class="text-xs text-slate-400 mb-1">Financial</div>
+        <div class="score-bar-track"><div id="modal-fin-bar" class="score-bar-fill bg-blue-500"></div></div>
+        <div id="modal-fin-val" class="text-sm font-semibold text-white mt-1"></div>
+        <div id="modal-fin-drivers" class="text-xs text-slate-400 mt-1"></div>
+      </div>
+      <div class="bg-slate-900 rounded-lg p-3">
+        <div class="text-xs text-slate-400 mb-1">Operational</div>
+        <div class="score-bar-track"><div id="modal-ops-bar" class="score-bar-fill bg-purple-500"></div></div>
+        <div id="modal-ops-val" class="text-sm font-semibold text-white mt-1"></div>
+        <div id="modal-ops-drivers" class="text-xs text-slate-400 mt-1"></div>
+      </div>
+      <div class="bg-slate-900 rounded-lg p-3">
+        <div class="text-xs text-slate-400 mb-1">Compliance</div>
+        <div class="score-bar-track"><div id="modal-comp-bar" class="score-bar-fill bg-yellow-500"></div></div>
+        <div id="modal-comp-val" class="text-sm font-semibold text-white mt-1"></div>
+      </div>
+      <div class="bg-slate-900 rounded-lg p-3">
+        <div class="text-xs text-slate-400 mb-1">Geopolitical</div>
+        <div class="score-bar-track"><div id="modal-geo-bar" class="score-bar-fill bg-orange-500"></div></div>
+        <div id="modal-geo-val" class="text-sm font-semibold text-white mt-1"></div>
+      </div>
+    </div>
+
+    <!-- Narrative -->
+    <div class="bg-slate-900 rounded-xl p-4">
+      <div class="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wider">Risk Narrative</div>
+      <p id="modal-narrative" class="text-sm text-slate-300 leading-relaxed"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── EMBEDDED DATA ────────────────────────────────────────────────────────── -->
+<script>
+  const VIS_NODES    = {{ vis_nodes_json | safe }};
+  const VIS_EDGES    = {{ vis_edges_json | safe }};
+  const RISK_TABLE   = {{ risk_table_json | safe }};
+  const ALERTS_DATA  = {{ alerts_json | safe }};
+  const CHART_DATA   = {{ chart_data_json | safe }};
+</script>
+
+<!-- ── JAVASCRIPT ───────────────────────────────────────────────────────────── -->
+<script>
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('active');
+    b.classList.add('text-slate-300');
+  });
+  document.getElementById('tab-' + name).classList.add('active');
+  const btns = document.querySelectorAll('.tab-btn');
+  const labels = { map: 0, scores: 1, alerts: 2, report: 3 };
+  const btn = btns[labels[name]];
+  if (btn) { btn.classList.add('active'); btn.classList.remove('text-slate-300'); }
+
+  // Lazy-init charts on first view
+  if (name === 'scores' && !window.chartsInit) { initCharts(); window.chartsInit = true; }
+  if (name === 'alerts' && !window.alertsInit) { renderAlerts(); window.alertsInit = true; }
+}
+
+// ── vis.js Network ─────────────────────────────────────────────────────────
+function initNetwork() {
+  const container = document.getElementById('network-container');
+  const nodes     = new vis.DataSet(VIS_NODES);
+  const edges     = new vis.DataSet(VIS_EDGES);
+  const options   = {
+    layout: { hierarchical: { enabled: false } },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 150 },
+      barnesHut: { gravitationalConstant: -3000, springLength: 120 }
+    },
+    interaction: { hover: true, tooltipDelay: 100, navigationButtons: true, keyboard: false },
+    nodes: { shape: 'dot', borderWidth: 2, shadow: true },
+    edges: { smooth: { type: 'curvedCW', roundness: 0.1 }, shadow: false },
+  };
+  const network = new vis.Network(container, { nodes, edges }, options);
+  network.on('click', params => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      const nodeData = VIS_NODES.find(n => n.id === nodeId);
+      if (nodeData && nodeData.meta) openModal(nodeData.meta);
+    }
+  });
+}
+
+// ── Top risk list (sidebar) ────────────────────────────────────────────────
+function renderTopRiskList() {
+  const sorted = [...RISK_TABLE].sort((a, b) => b.score - a.score).slice(0, 12);
+  const container = document.getElementById('top-risk-list');
+  container.innerHTML = sorted.map(r => `
+    <div class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-700 cursor-pointer"
+         onclick="highlightNodeByName('${r.name.replace(/'/g,"\\'")}')">
+      <div class="flex-1 min-w-0 mr-2">
+        <div class="text-sm font-medium text-slate-200 truncate">${r.name}</div>
+        <div class="text-xs text-slate-400">${r.type} · ${r.country || '—'}</div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-sm font-bold text-white">${r.score}</span>
+        <span class="risk-badge risk-${r.level}">${r.level}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Entity detail modal ────────────────────────────────────────────────────
+function openModal(meta) {
+  const levelColours = { critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#22c55e', unknown:'#64748b' };
+  const colour = levelColours[meta.risk_level] || '#64748b';
+  document.getElementById('modal-name').textContent  = meta.name;
+  document.getElementById('modal-meta').textContent  = `${meta.type} · ${meta.industry || '—'} · ${meta.country || 'Unknown'} · Depth L${meta.depth}`;
+  const badge = document.getElementById('modal-score-badge');
+  badge.textContent = meta.risk_level.toUpperCase();
+  badge.className   = `risk-badge risk-${meta.risk_level}`;
+  document.getElementById('modal-score-val').textContent  = meta.score + '/100';
+  document.getElementById('modal-score-bar').style.width  = meta.score + '%';
+  document.getElementById('modal-score-bar').style.background = colour;
+  const setDim = (prefix, score, drivers) => {
+    document.getElementById(`modal-${prefix}-bar`).style.width = score + '%';
+    document.getElementById(`modal-${prefix}-val`).textContent  = score + '/100';
+    if (drivers && document.getElementById(`modal-${prefix}-drivers`)) {
+      document.getElementById(`modal-${prefix}-drivers`).textContent = (drivers || []).join(' · ') || '';
+    }
+  };
+  setDim('fin',  meta.fin_score,  meta.fin_drivers);
+  setDim('ops',  meta.ops_score,  meta.ops_drivers);
+  setDim('comp', meta.comp_score, []);
+  setDim('geo',  meta.geo_score,  []);
+  document.getElementById('modal-narrative').textContent = meta.narrative || 'No narrative generated.';
+  document.getElementById('entity-modal').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e.target.id === 'entity-modal') document.getElementById('entity-modal').classList.remove('open');
+}
+
+// ── Scores table ──────────────────────────────────────────────────────────
+let _sortKey = 'score', _sortAsc = false, _tableFilter = '';
+
+function renderScoresTable() {
+  let data = [...RISK_TABLE].filter(r =>
+    r.name.toLowerCase().includes(_tableFilter) ||
+    r.country.toLowerCase().includes(_tableFilter) ||
+    r.type.toLowerCase().includes(_tableFilter)
+  );
+  data.sort((a, b) => {
+    const av = a[_sortKey], bv = b[_sortKey];
+    const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+    return _sortAsc ? cmp : -cmp;
+  });
+  const tbody = document.getElementById('scores-tbody');
+  tbody.innerHTML = data.map(r => `
+    <tr class="cursor-pointer text-slate-300 hover:bg-slate-750"
+        onclick="showRadarForRow(${JSON.stringify(r).replace(/"/g,'&quot;')})">
+      <td class="py-2 pr-4 font-medium text-slate-100">${r.name}</td>
+      <td class="py-2 pr-3 text-slate-400">${r.ticker}</td>
+      <td class="py-2 pr-3">${r.type}</td>
+      <td class="py-2 pr-3">${r.country || '—'}</td>
+      <td class="py-2 pr-3 font-bold text-white">${r.score}</td>
+      <td class="py-2 pr-3"><span class="risk-badge risk-${r.level}">${r.level}</span></td>
+      <td class="py-2 pr-3">${r.fin}</td>
+      <td class="py-2 pr-3">${r.ops}</td>
+      <td class="py-2 pr-3">${r.comp}</td>
+      <td class="py-2 pr-3">${r.geo}</td>
+    </tr>
+  `).join('');
+}
+
+function sortTable(key) { _sortKey = key; _sortAsc = !_sortAsc; renderScoresTable(); }
+function filterTable() { _tableFilter = document.getElementById('table-search').value.toLowerCase(); renderScoresTable(); }
+
+// ── Plotly charts ─────────────────────────────────────────────────────────
+function initCharts() {
+  renderScoresTable();
+
+  // Bar chart
+  Plotly.newPlot('bar-chart', [{
+    type: 'bar', orientation: 'h',
+    x: [...CHART_DATA.bar_scores].reverse(),
+    y: [...CHART_DATA.bar_names].reverse(),
+    marker: { color: [...CHART_DATA.bar_colors].reverse() },
+    hovertemplate: '%{y}: <b>%{x}</b><extra></extra>',
+  }], {
+    paper_bgcolor:'transparent', plot_bgcolor:'transparent',
+    margin: { l:140, r:20, t:10, b:30 },
+    font: { color:'#94a3b8', size:11 },
+    xaxis: { range:[0,100], gridcolor:'#334155', tickfont:{color:'#94a3b8'} },
+    yaxis: { tickfont:{color:'#cbd5e1'} },
+  }, { responsive: true, displayModeBar: false });
+
+  // Default radar (top entity)
+  if (RISK_TABLE.length > 0) showRadarForRow(RISK_TABLE[0]);
+}
+
+function showRadarForRow(r) {
+  Plotly.newPlot('radar-chart', [{
+    type: 'scatterpolar', fill: 'toself',
+    r: [r.fin, r.ops, r.comp, r.geo, r.fin],
+    theta: ['Financial', 'Operational', 'Compliance', 'Geopolitical', 'Financial'],
+    line: { color:'#3b82f6' }, fillcolor:'rgba(59,130,246,0.2)',
+    hovertemplate: '%{theta}: <b>%{r}</b><extra></extra>',
+    name: r.name,
+  }], {
+    paper_bgcolor:'transparent', plot_bgcolor:'transparent',
+    font: { color:'#94a3b8', size:11 },
+    polar: {
+      bgcolor:'#0f172a',
+      radialaxis: { visible:true, range:[0,100], gridcolor:'#334155', tickfont:{color:'#64748b'} },
+      angularaxis: { gridcolor:'#334155', tickfont:{color:'#cbd5e1'} },
+    },
+    margin: { l:40, r:40, t:40, b:40 },
+    showlegend: false,
+    title: { text: r.name, font:{color:'#f1f5f9', size:12} },
+  }, { responsive:true, displayModeBar:false });
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────────
+let _alertFilter = 'all';
+
+function renderAlerts() {
+  const filtered = ALERTS_DATA.filter(a => _alertFilter === 'all' || a.severity === _alertFilter);
+  const container = document.getElementById('alerts-container');
+  const noMsg     = document.getElementById('no-alerts-msg');
+
+  if (filtered.length === 0) {
+    container.innerHTML = '';
+    noMsg.classList.remove('hidden');
+    return;
+  }
+  noMsg.classList.add('hidden');
+
+  const timingColour = { immediate:'text-red-400', '24h':'text-orange-400', '1-week':'text-yellow-400', monitoring:'text-green-400' };
+  container.innerHTML = filtered.map(a => `
+    <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 hover:border-slate-500 transition">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="risk-badge risk-${a.severity}">${a.severity}</span>
+            <span class="text-sm font-semibold text-white">${a.alert_title}</span>
+          </div>
+          <div class="text-xs text-slate-400 mb-2">${a.entity} · Score ${a.score}/100 · ${a.triggered}</div>
+          <p class="text-sm text-slate-300 mb-2">${a.summary}</p>
+          <div class="flex flex-wrap gap-3 text-xs">
+            <span class="text-slate-400">📌 <span class="text-slate-200">${a.action}</span></span>
+            <span class="text-slate-400">📤 Escalate to: <span class="text-blue-400 font-medium">${a.escalate}</span></span>
+            <span class="text-slate-400">⏱ <span class="${timingColour[a.timing] || 'text-slate-200'}">${a.timing}</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterAlerts(severity) {
+  _alertFilter = severity;
+  document.querySelectorAll('.alert-filter-btn').forEach(b => {
+    b.className = 'alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs';
+  });
+  event.target.className = 'alert-filter-btn active-filter px-2 py-1 rounded bg-blue-600 text-white text-xs';
+  renderAlerts();
+}
+
+// ── Graph node highlight from sidebar ─────────────────────────────────────
+function highlightNodeByName(name) {
+  switchTab('map');
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function exportDashboard() {
+  const blob = new Blob([document.documentElement.outerHTML], { type:'text/html' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'vendor_risk_dashboard.html';
+  a.click();
+}
+
+function printReport() { window.print(); }
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  initNetwork();
+  renderTopRiskList();
+});
+</script>
+
+<!-- Report content styles -->
+<style>
+  #report-content h2 { color:#f1f5f9; font-size:1.1rem; font-weight:700; margin:1.5rem 0 0.5rem; border-bottom:1px solid #334155; padding-bottom:0.4rem; }
+  #report-content p  { color:#cbd5e1; line-height:1.7; margin-bottom:0.75rem; }
+  #report-content ul, #report-content ol { color:#cbd5e1; padding-left:1.5rem; margin-bottom:0.75rem; }
+  #report-content li { margin-bottom:0.4rem; line-height:1.6; }
+  #report-content strong { color:#f8fafc; }
+</style>
+
+</body>
+</html>
