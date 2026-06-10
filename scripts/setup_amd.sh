@@ -12,7 +12,7 @@ echo "============================================"
 
 # ── 1. Check ROCm ─────────────────────────────────────────────────────────────
 echo ""
-echo "[1/7] Checking ROCm installation..."
+echo "[1/8] Checking ROCm installation..."
 if command -v rocm-smi &> /dev/null; then
     rocm-smi --showproductname 2>/dev/null | head -5
     echo "✓ ROCm detected"
@@ -23,17 +23,32 @@ fi
 
 # ── 2. Python environment ──────────────────────────────────────────────────────
 echo ""
-echo "[2/7] Installing base Python requirements..."
+echo "[2/8] Installing base Python requirements..."
 pip install -r requirements.txt --quiet
 echo "✓ Base requirements installed"
 
-# ── 3. PyTorch with ROCm ──────────────────────────────────────────────────────
+# ── 3. Clean Slate ─────────────────────────────────────────────────────────────
 echo ""
-echo "[3/7] Installing PyTorch with ROCm support..."
-pip install torch torchvision torchaudio \
+echo "[3/8] Cleaning previous PyTorch/vLLM installations to avoid conflicts..."
+pip uninstall -y vllm torch torchvision torchaudio pytorch-triton-rocm triton --quiet
+echo "✓ Environment slate wiped clean"
+
+# ── 4. vLLM & Dependency Resolution ────────────────────────────────────────────
+echo ""
+echo "[4/8] Installing vLLM (pinned version) and resolving Numpy conflicts..."
+# Pin vLLM under 0.7.0 to match the ROCm 6.1 / PyTorch 2.6.0 era
+pip install --no-cache-dir "vllm>=0.4.2,<0.7.0" "numpy<2.0.0" --quiet
+# Strip out the CUDA Triton that vLLM quietly pulls in
+pip uninstall -y triton --quiet
+echo "✓ Pinned vLLM installed"
+
+# ── 5. PyTorch with ROCm (Forced Overwrite) ──────────────────────────────────
+echo ""
+echo "[5/8] Forcing PyTorch ROCm installation..."
+pip install --no-cache-dir --force-reinstall torch torchvision torchaudio pytorch-triton-rocm \
     --index-url https://download.pytorch.org/whl/rocm6.1 \
-    --quiet 2>&1 | tail -3
-echo "✓ PyTorch ROCm installed"
+    --quiet
+echo "✓ PyTorch ROCm forced successfully"
 
 # Verify GPU access
 python -c "
@@ -45,21 +60,15 @@ if torch.cuda.is_available():
     print(f'VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
 " || echo "⚠ PyTorch GPU check failed — continuing"
 
-# ── 4. vLLM ──────────────────────────────────────────────────────────────────
+# ── 6. AMD-specific requirements ─────────────────────────────────────────────
 echo ""
-echo "[4/7] Installing vLLM..."
-pip install vllm --quiet 2>&1 | tail -3
-echo "✓ vLLM installed"
-
-# ── 5. AMD-specific requirements ─────────────────────────────────────────────
-echo ""
-echo "[5/7] Installing AMD requirements..."
-pip install -r requirements-amd.txt --quiet 2>&1 | tail -3
+echo "[6/8] Installing additional AMD requirements..."
+pip install -r requirements-amd.txt --quiet
 echo "✓ AMD requirements installed"
 
-# ── 6. Download model ────────────────────────────────────────────────────────
+# ── 7. Download model ────────────────────────────────────────────────────────
 echo ""
-echo "[6/7] Downloading Qwen2.5-14B-Instruct-GPTQ-Int4 (~9GB)..."
+echo "[7/8] Downloading Qwen2.5-14B-Instruct-GPTQ-Int4 (~9GB)..."
 echo "  This will be saved to ./models/ inside your 25GB persistent storage"
 echo "  Estimated time: 5-10 minutes depending on network speed"
 
@@ -84,9 +93,9 @@ print('Model downloaded successfully')
 fi
 echo "✓ Model downloaded"
 
-# ── 7. Environment file ──────────────────────────────────────────────────────
+# ── 8. Environment file ──────────────────────────────────────────────────────
 echo ""
-echo "[7/7] Setting up .env for AMD..."
+echo "[8/8] Setting up .env for AMD..."
 if [ ! -f .env ]; then
     cp .env.example .env
 fi
@@ -106,6 +115,7 @@ echo "Start vLLM server (run in a separate terminal or background):"
 echo ""
 echo "  python -m vllm.entrypoints.openai.api_server \\"
 echo "      --model ./models/Qwen2.5-14B-Instruct-GPTQ-Int4 \\"
+echo "      --quantization gptq \\"
 echo "      --dtype float16 \\"
 echo "      --max-model-len 8192 \\"
 echo "      --gpu-memory-utilization 0.90 \\"
