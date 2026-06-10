@@ -1,617 +1,628 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Vendor Risk Intel — {{ target_company }}</title>
-
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- vis.js Network -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
-  <link  href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet"/>
-
-  <!-- Plotly.js -->
-  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            slate: { 950: '#020617' }
-          }
-        }
-      }
-    }
-  </script>
-
-  <style>
-    body { background-color: #0f172a; color: #f1f5f9; font-family: 'Inter', system-ui, sans-serif; }
-    #network-container { width: 100%; height: 520px; background: #1e293b; border-radius: 0.5rem; border: 1px solid #334155; }
-    .tab-btn { transition: all 0.2s; }
-    .tab-btn.active { background-color: #3b82f6; color: white; }
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
-    .risk-badge { padding: 2px 10px; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-    .risk-critical { background:#ef4444; color:#fff; }
-    .risk-high     { background:#f97316; color:#fff; }
-    .risk-medium   { background:#eab308; color:#1e293b; }
-    .risk-low      { background:#22c55e; color:#fff; }
-    .risk-unknown  { background:#64748b; color:#fff; }
-    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:50; align-items:center; justify-content:center; }
-    .modal-overlay.open { display:flex; }
-    .score-bar-track { background:#334155; border-radius:9999px; height:6px; width:100%; }
-    .score-bar-fill  { height:6px; border-radius:9999px; transition: width 0.6s ease; }
-    tr:hover { background: #1e293b; }
-    .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #1e293b; }
-    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Sentry Vendor Risk Intel Center - {{ target_company }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+        .tab-btn.active { background-color: #1e293b; border-color: #3b82f6; color: #3b82f6; }
+        body { background-color: #0f172a; color: #f1f5f9; font-family: system-ui, -apple-system, sans-serif; }
+    </style>
 </head>
+<body class="p-6">
 
-<body class="min-h-screen p-4">
-
-<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
-<header class="flex items-center justify-between mb-6 px-2">
-  <div>
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">VR</div>
-      <h1 class="text-xl font-bold text-white">Vendor Risk Intel</h1>
-      <span class="text-slate-400 text-sm">|</span>
-      <h2 class="text-xl font-semibold text-blue-400">{{ target_company }}</h2>
-    </div>
-    <p class="text-slate-400 text-xs mt-1 ml-11">Generated {{ generated_at }} &nbsp;·&nbsp; Run ID: {{ run_id }}</p>
-  </div>
-  <div class="flex gap-2">
-    <button onclick="exportDashboard()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-sm rounded-lg text-slate-200 transition">⬇ Export HTML</button>
-    {% if error_count > 0 %}
-    <span class="px-3 py-1.5 bg-yellow-900 text-yellow-300 text-xs rounded-lg">⚠ {{ error_count }} pipeline warning(s)</span>
-    {% endif %}
-  </div>
-</header>
-
-<!-- ── SUMMARY STAT CARDS ───────────────────────────────────────────────────── -->
-<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
-  <div class="stat-card col-span-1">
-    <div class="text-2xl font-bold text-white">{{ stats.total_entities }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Entities Monitored</div>
-  </div>
-  <div id="card-critical" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#ef4444" onclick="selectRiskCategory('critical')">
-    <div class="text-2xl font-bold text-red-400">{{ stats.critical_count }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Critical Risk</div>
-  </div>
-  <div id="card-high" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#f97316" onclick="selectRiskCategory('high')">
-    <div class="text-2xl font-bold text-orange-400">{{ stats.high_count }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">High Risk</div>
-  </div>
-  <div id="card-medium" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#eab308" onclick="selectRiskCategory('medium')">
-    <div class="text-2xl font-bold text-yellow-400">{{ stats.medium_count }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Medium Risk</div>
-  </div>
-  <div id="card-low" class="stat-card col-span-1 cursor-pointer hover:bg-slate-700 bg-slate-800" style="border-color:#22c55e" onclick="selectRiskCategory('low')">
-    <div class="text-2xl font-bold text-green-400">{{ stats.low_count }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Low Risk</div>
-  </div>
-  <div class="stat-card col-span-1">
-    <div class="text-2xl font-bold text-white">{{ stats.avg_score }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Avg Risk Score</div>
-  </div>
-  <div class="stat-card col-span-1" style="border-color:#f97316">
-    <div class="text-2xl font-bold text-orange-400">{{ stats.alert_count }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Active Alerts</div>
-  </div>
-  <div class="stat-card col-span-1" style="border-color:#ef4444">
-    <div class="text-2xl font-bold text-red-400">{{ stats.spof_count }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">Single-Point Failures</div>
-  </div>
-</div>
-
-<!-- ── TAB NAV ──────────────────────────────────────────────────────────────── -->
-<div class="flex gap-1 mb-4 bg-slate-800 p-1 rounded-lg w-fit">
-  <button class="tab-btn active px-4 py-2 rounded-md text-sm font-medium" onclick="switchTab('map')">🗺 Supply Chain Map</button>
-  <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-slate-300" onclick="switchTab('scores')">📊 Risk Scores</button>
-  <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-slate-300" onclick="switchTab('alerts')">🔔 Alerts <span id="alert-badge" class="ml-1 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{{ stats.alert_count }}</span></button>
-  <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-slate-300" onclick="switchTab('report')">📋 Executive Report</button>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- TAB 1: SUPPLY CHAIN MAP                                                   -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="tab-map" class="tab-pane active">
-  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-
-    <!-- Network Graph (2/3 width) -->
-    <div class="xl:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-sm font-semibold text-slate-200">Supply Chain Network</h3>
-        <div class="flex gap-2 items-center text-xs text-slate-400">
-          <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Critical
-          <span class="w-3 h-3 rounded-full bg-orange-500 inline-block"></span> High
-          <span class="w-3 h-3 rounded-full bg-yellow-400 inline-block"></span> Medium
-          <span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> Low
-        </div>
-      </div>
-      <div id="network-container"></div>
-      <p class="text-xs text-slate-500 mt-2">Click any node to view detailed risk profile. Red edges indicate single-source dependencies.</p>
-    </div>
-
-    <!-- Top Risk Entities sidebar (1/3 width) -->
-    <div class="xl:col-span-1 bg-slate-800 rounded-xl border border-slate-700 p-4 overflow-y-auto" style="max-height:590px">
-      <h3 class="text-sm font-semibold text-slate-200 mb-3">Top Risk Entities</h3>
-      <div id="top-risk-list" class="space-y-2"></div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- TAB 2: RISK SCORES                                                        -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="tab-scores" class="tab-pane">
-  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-    <!-- Bar chart -->
-    <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
-      <h3 class="text-sm font-semibold text-slate-200 mb-3">Composite Risk Score — Top 15 Entities</h3>
-      <div id="bar-chart" style="height:340px"></div>
-    </div>
-    <!-- Dimension radar for selected entity -->
-    <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
-      <h3 class="text-sm font-semibold text-slate-200 mb-1">Risk Dimension Breakdown</h3>
-      <p class="text-xs text-slate-400 mb-3">Click any row in the table below to inspect dimensions</p>
-      <div id="radar-chart" style="height:320px"></div>
-    </div>
-  </div>
-
-  <!-- Scores Table -->
-  <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-semibold text-slate-200">Full Risk Score Table</h3>
-      <input id="table-search" type="text" placeholder="Filter entities…"
-             class="bg-slate-700 text-sm text-slate-200 px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:border-blue-500 w-48"
-             oninput="filterTable()"/>
-    </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs text-slate-400 border-b border-slate-700">
-            <th class="py-2 pr-4 cursor-pointer" onclick="sortTable('name')">Entity ↕</th>
-            <th class="py-2 pr-3">Ticker</th>
-            <th class="py-2 pr-3">Type</th>
-            <th class="py-2 pr-3">Country</th>
-            <th class="py-2 pr-3 cursor-pointer" onclick="sortTable('score')">Score ↕</th>
-            <th class="py-2 pr-3">Level</th>
-            <th class="py-2 pr-3">Financial</th>
-            <th class="py-2 pr-3">Operational</th>
-            <th class="py-2 pr-3">Compliance</th>
-            <th class="py-2 pr-3">Geopolitical</th>
-            <th class="py-2 pr-3">Evidence</th>
-          </tr>
-        </thead>
-        <tbody id="scores-tbody" class="divide-y divide-slate-700/50 text-slate-300"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- TAB 3: ALERTS                                                             -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="tab-alerts" class="tab-pane">
-  <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-sm font-semibold text-slate-200">Active Risk Alerts</h3>
-      <div class="flex gap-2 text-xs">
-        <button onclick="filterAlerts('all')"      class="alert-filter-btn active-filter px-2 py-1 rounded bg-blue-600 text-white">All</button>
-        <button onclick="filterAlerts('critical')" class="alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Critical</button>
-        <button onclick="filterAlerts('high')"     class="alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">High</button>
-        <button onclick="filterAlerts('medium')"   class="alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Medium</button>
-      </div>
-    </div>
-    <div id="alerts-container" class="space-y-3"></div>
-    <p id="no-alerts-msg" class="text-slate-400 text-sm text-center py-8 hidden">No alerts for selected severity.</p>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- TAB 4: EXECUTIVE REPORT                                                   -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="tab-report" class="tab-pane">
-  <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 max-w-4xl mx-auto">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h3 class="text-lg font-semibold text-white">Executive Risk Briefing</h3>
-        <p class="text-xs text-slate-400 mt-0.5">{{ target_company }} · {{ generated_at }}</p>
-      </div>
-      <button onclick="printReport()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-sm rounded-lg text-slate-200">🖨 Print</button>
-    </div>
-    <div id="report-content" class="prose prose-invert max-w-none text-slate-300 leading-relaxed space-y-3">
-      {{ report_html | safe }}
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- ENTITY DETAIL MODAL                                                       -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="entity-modal" class="modal-overlay" onclick="closeModal(event)">
-  <div class="bg-slate-800 border border-slate-600 rounded-2xl w-full max-w-2xl mx-4 p-6 shadow-2xl" onclick="event.stopPropagation()">
-    <div class="flex items-start justify-between mb-4">
-      <div>
-        <h2 id="modal-name" class="text-lg font-bold text-white"></h2>
-        <p id="modal-meta" class="text-sm text-slate-400 mt-0.5"></p>
-      </div>
-      <button onclick="document.getElementById('entity-modal').classList.remove('open')" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
-    </div>
-
-    <!-- Score gauge -->
-    <div class="bg-slate-900 rounded-xl p-4 mb-4">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm text-slate-400">Composite Risk Score</span>
-        <span id="modal-score-badge" class="risk-badge"></span>
-      </div>
-      <div class="flex items-center gap-3">
-        <div class="score-bar-track flex-1">
-          <div id="modal-score-bar" class="score-bar-fill"></div>
-        </div>
-        <span id="modal-score-val" class="text-2xl font-bold text-white w-16 text-right"></span>
-      </div>
-    </div>
-
-    <!-- Dimension scores -->
-    <div class="grid grid-cols-2 gap-3 mb-4">
-      <div class="bg-slate-900 rounded-lg p-3">
-        <div class="text-xs text-slate-400 mb-1">Financial</div>
-        <div class="score-bar-track"><div id="modal-fin-bar" class="score-bar-fill bg-blue-500"></div></div>
-        <div id="modal-fin-val" class="text-sm font-semibold text-white mt-1"></div>
-        <div id="modal-fin-drivers" class="text-xs text-slate-400 mt-1"></div>
-      </div>
-      <div class="bg-slate-900 rounded-lg p-3">
-        <div class="text-xs text-slate-400 mb-1">Operational</div>
-        <div class="score-bar-track"><div id="modal-ops-bar" class="score-bar-fill bg-purple-500"></div></div>
-        <div id="modal-ops-val" class="text-sm font-semibold text-white mt-1"></div>
-        <div id="modal-ops-drivers" class="text-xs text-slate-400 mt-1"></div>
-      </div>
-      <div class="bg-slate-900 rounded-lg p-3">
-        <div class="text-xs text-slate-400 mb-1">Compliance</div>
-        <div class="score-bar-track"><div id="modal-comp-bar" class="score-bar-fill bg-yellow-500"></div></div>
-        <div id="modal-comp-val" class="text-sm font-semibold text-white mt-1"></div>
-      </div>
-      <div class="bg-slate-900 rounded-lg p-3">
-        <div class="text-xs text-slate-400 mb-1">Geopolitical</div>
-        <div class="score-bar-track"><div id="modal-geo-bar" class="score-bar-fill bg-orange-500"></div></div>
-        <div id="modal-geo-val" class="text-sm font-semibold text-white mt-1"></div>
-      </div>
-    </div>
-
-    <!-- Narrative -->
-    <div class="bg-slate-900 rounded-xl p-4">
-      <div class="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wider">Risk Narrative</div>
-      <p id="modal-narrative" class="text-sm text-slate-300 leading-relaxed"></p>
-    </div>
-
-    <div class="bg-slate-900 rounded-xl p-4 mt-4">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-slate-400 uppercase tracking-wider">Supporting Evidence</span>
-      </div>
-      <div id="modal-evidence" class="space-y-2 text-sm text-slate-300">
-        <div class="text-slate-500">No supporting evidence links available.</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ── EMBEDDED DATA ────────────────────────────────────────────────────────── -->
-<script>
-  const VIS_NODES    = {{ vis_nodes_json | safe }};
-  const VIS_EDGES    = {{ vis_edges_json | safe }};
-  const RISK_TABLE   = {{ risk_table_json | safe }};
-  const ALERTS_DATA  = {{ alerts_json | safe }};
-  const CHART_DATA   = {{ chart_data_json | safe }};
-</script>
-
-<!-- ── JAVASCRIPT ───────────────────────────────────────────────────────────── -->
-<script>
-// ── Tab switching ──────────────────────────────────────────────────────────
-function switchTab(name) {
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => {
-    b.classList.remove('active');
-    b.classList.add('text-slate-300');
-  });
-  document.getElementById('tab-' + name).classList.add('active');
-  const btns = document.querySelectorAll('.tab-btn');
-  const labels = { map: 0, scores: 1, alerts: 2, report: 3 };
-  const btn = btns[labels[name]];
-  if (btn) { btn.classList.add('active'); btn.classList.remove('text-slate-300'); }
-
-  // Lazy-init charts on first view
-  if (name === 'scores' && !window.chartsInit) { initCharts(); window.chartsInit = true; }
-  if (name === 'alerts' && !window.alertsInit) { renderAlerts(); window.alertsInit = true; }
-}
-
-// ── vis.js Network ─────────────────────────────────────────────────────────
-function initNetwork() {
-  const container = document.getElementById('network-container');
-  const nodes     = new vis.DataSet(VIS_NODES);
-  const edges     = new vis.DataSet(VIS_EDGES);
-  const options   = {
-    layout: { hierarchical: { enabled: false } },
-    physics: {
-      enabled: true,
-      stabilization: { iterations: 150 },
-      barnesHut: { gravitationalConstant: -3000, springLength: 120 }
-    },
-    interaction: { hover: true, tooltipDelay: 100, navigationButtons: true, keyboard: false },
-    nodes: { shape: 'dot', borderWidth: 2, shadow: true },
-    edges: { smooth: { type: 'curvedCW', roundness: 0.1 }, shadow: false },
-  };
-
-  const network = new vis.Network(container, { nodes, edges }, options);
-  window.network = network;
-}
-
-// ── Top risk list (sidebar) ────────────────────────────────────────────────
-function renderTopRiskList() {
-  const sorted = [...RISK_TABLE].sort((a, b) => b.score - a.score).slice(0, 12);
-  const container = document.getElementById('top-risk-list');
-  container.innerHTML = sorted.map(r => `
-    <div class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-700 cursor-pointer"
-         onclick="highlightNodeByName('${r.name.replace(/'/g,"\\'")}')">
-      <div class="flex-1 min-w-0 mr-2">
-        <div class="text-sm font-medium text-slate-200 truncate">${r.name}</div>
-        <div class="text-xs text-slate-400">${r.type} · ${r.country || '—'}</div>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span class="text-sm font-bold text-white">${r.score}</span>
-        <span class="risk-badge risk-${r.level}">${r.level}</span>
-      </div>
-    </div>
-  `).join('');
-}
-
-// ── Entity detail modal ────────────────────────────────────────────────────
-function openModal(meta) {
-  const levelColours = { critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#22c55e', unknown:'#64748b' };
-  const colour = levelColours[meta.risk_level] || '#64748b';
-  document.getElementById('modal-name').textContent  = meta.name;
-  document.getElementById('modal-meta').textContent  = `${meta.type} · ${meta.industry || '—'} · ${meta.country || 'Unknown'} · Depth L${meta.depth}`;
-  const badge = document.getElementById('modal-score-badge');
-  badge.textContent = meta.risk_level.toUpperCase();
-  badge.className   = `risk-badge risk-${meta.risk_level}`;
-  document.getElementById('modal-score-val').textContent  = meta.score + '/100';
-  document.getElementById('modal-score-bar').style.width  = meta.score + '%';
-  document.getElementById('modal-score-bar').style.background = colour;
-  const evidenceContainer = document.getElementById('modal-evidence');
-  evidenceContainer.innerHTML = (meta.evidence && meta.evidence.length) ?
-    meta.evidence.map(e =>
-      `<div><a href="${e.url}" target="_blank" rel="noreferrer" class="text-blue-400 hover:text-blue-300">${e.type}: ${e.title}</a></div>`
-    ).join('') :
-    '<div class="text-slate-500">No supporting evidence links available.</div>';
-  const setDim = (prefix, score, drivers) => {
-    document.getElementById(`modal-${prefix}-bar`).style.width = score + '%';
-    document.getElementById(`modal-${prefix}-val`).textContent  = score + '/100';
-    if (drivers && document.getElementById(`modal-${prefix}-drivers`)) {
-      document.getElementById(`modal-${prefix}-drivers`).textContent = (drivers || []).join(' · ') || '';
-    }
-  };
-  setDim('fin',  meta.fin_score,  meta.fin_drivers);
-  setDim('ops',  meta.ops_score,  meta.ops_drivers);
-  setDim('comp', meta.comp_score, []);
-  setDim('geo',  meta.geo_score,  []);
-  document.getElementById('modal-narrative').textContent = meta.narrative || 'No narrative generated.';
-  document.getElementById('entity-modal').classList.add('open');
-}
-
-function closeModal(e) {
-  if (e.target.id === 'entity-modal') document.getElementById('entity-modal').classList.remove('open');
-}
-
-// ── Scores table ──────────────────────────────────────────────────────────
-let _sortKey = 'score', _sortAsc = false, _tableFilter = '';
-
-function renderScoresTable() {
-  let data = [...RISK_TABLE].filter(r =>
-    r.name.toLowerCase().includes(_tableFilter) ||
-    r.country.toLowerCase().includes(_tableFilter) ||
-    r.type.toLowerCase().includes(_tableFilter)
-  );
-  if (_selectedRiskLevel !== 'all') {
-    data = data.filter(r => r.level === _selectedRiskLevel);
-  }
-  data.sort((a, b) => {
-    const av = a[_sortKey], bv = b[_sortKey];
-    const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
-    return _sortAsc ? cmp : -cmp;
-  });
-  const tbody = document.getElementById('scores-tbody');
-  tbody.innerHTML = data.map(r => `
-    <tr class="cursor-pointer text-slate-300 hover:bg-slate-750"
-        onclick="showRadarForRow(${JSON.stringify(r).replace(/"/g,'&quot;')})">
-      <td class="py-2 pr-4 font-medium text-slate-100">${r.name}</td>
-      <td class="py-2 pr-3 text-slate-400">${r.ticker}</td>
-      <td class="py-2 pr-3">${r.type}</td>
-      <td class="py-2 pr-3">${r.country || '—'}</td>
-      <td class="py-2 pr-3 font-bold text-white">${r.score}</td>
-      <td class="py-2 pr-3"><span class="risk-badge risk-${r.level}">${r.level}</span></td>
-      <td class="py-2 pr-3">${r.fin}</td>
-      <td class="py-2 pr-3">${r.ops}</td>
-      <td class="py-2 pr-3">${r.comp}</td>
-      <td class="py-2 pr-3">${r.geo}</td>
-      <td class="py-2 pr-3">
-        ${r.evidence && r.evidence.length ? `<button onclick='openEntityModal(${JSON.stringify(r).replace(/'/g,'\\\'')})' class="px-2 py-1 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100">View</button>` : '—'}
-      </td>
-    </tr>
-  `).join('');
-}
-
-function sortTable(key) { _sortKey = key; _sortAsc = !_sortAsc; renderScoresTable(); }
-function filterTable() { _tableFilter = document.getElementById('table-search').value.toLowerCase(); renderScoresTable(); }
-function openEntityModal(meta) {
-  if (!meta) return;
-  showRadarForRow(meta);
-  openModal(meta);
-}
-
-let _selectedRiskLevel = 'all';
-function selectRiskCategory(level) {
-  if (_selectedRiskLevel === level) {
-    level = 'all';
-  }
-  _selectedRiskLevel = level;
-  switchTab('scores');
-  updateRiskCategoryCards();
-  renderScoresTable();
-}
-
-function updateRiskCategoryCards() {
-  ['critical','high','medium','low'].forEach(level => {
-    const card = document.getElementById(`card-${level}`);
-    if (!card) return;
-    if (_selectedRiskLevel === level) {
-      card.classList.add('bg-slate-700');
-      card.classList.remove('bg-slate-800');
-    } else {
-      card.classList.remove('bg-slate-700');
-      card.classList.add('bg-slate-800');
-    }
-  });
-}
-// ── Plotly charts ─────────────────────────────────────────────────────────
-function initCharts() {
-  renderScoresTable();
-
-  // Bar chart
-  Plotly.newPlot('bar-chart', [{
-    type: 'bar', orientation: 'h',
-    x: [...CHART_DATA.bar_scores].reverse(),
-    y: [...CHART_DATA.bar_names].reverse(),
-    marker: { color: [...CHART_DATA.bar_colors].reverse() },
-    hovertemplate: '%{y}: <b>%{x}</b><extra></extra>',
-  }], {
-    paper_bgcolor:'transparent', plot_bgcolor:'transparent',
-    margin: { l:140, r:20, t:10, b:30 },
-    font: { color:'#94a3b8', size:11 },
-    xaxis: { range:[0,100], gridcolor:'#334155', tickfont:{color:'#94a3b8'} },
-    yaxis: { tickfont:{color:'#cbd5e1'} },
-  }, { responsive: true, displayModeBar: false });
-
-  // Default radar (top entity)
-  if (RISK_TABLE.length > 0) showRadarForRow(RISK_TABLE[0]);
-}
-
-function showRadarForRow(r) {
-  Plotly.newPlot('radar-chart', [{
-    type: 'scatterpolar', fill: 'toself',
-    r: [r.fin, r.ops, r.comp, r.geo, r.fin],
-    theta: ['Financial', 'Operational', 'Compliance', 'Geopolitical', 'Financial'],
-    line: { color:'#3b82f6' }, fillcolor:'rgba(59,130,246,0.2)',
-    hovertemplate: '%{theta}: <b>%{r}</b><extra></extra>',
-    name: r.name,
-  }], {
-    paper_bgcolor:'transparent', plot_bgcolor:'transparent',
-    font: { color:'#94a3b8', size:11 },
-    polar: {
-      bgcolor:'#0f172a',
-      radialaxis: { visible:true, range:[0,100], gridcolor:'#334155', tickfont:{color:'#64748b'} },
-      angularaxis: { gridcolor:'#334155', tickfont:{color:'#cbd5e1'} },
-    },
-    margin: { l:40, r:40, t:40, b:40 },
-    showlegend: false,
-    title: { text: r.name, font:{color:'#f1f5f9', size:12} },
-  }, { responsive:true, displayModeBar:false });
-}
-
-// ── Alerts ────────────────────────────────────────────────────────────────
-let _alertFilter = 'all';
-
-function renderAlerts() {
-  const filtered = ALERTS_DATA.filter(a => _alertFilter === 'all' || a.severity === _alertFilter);
-  const container = document.getElementById('alerts-container');
-  const noMsg     = document.getElementById('no-alerts-msg');
-
-  if (filtered.length === 0) {
-    container.innerHTML = '';
-    noMsg.classList.remove('hidden');
-    return;
-  }
-  noMsg.classList.add('hidden');
-
-  const timingColour = { immediate:'text-red-400', '24h':'text-orange-400', '1-week':'text-yellow-400', monitoring:'text-green-400' };
-  container.innerHTML = filtered.map(a => `
-    <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 hover:border-slate-500 transition">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="risk-badge risk-${a.severity}">${a.severity}</span>
-            <span class="text-sm font-semibold text-white">${a.title}</span>
-          </div>
-          <div class="text-xs text-slate-400 mb-2">${a.entity} · Score ${a.score}/100 · ${a.triggered}</div>
-          <p class="text-sm text-slate-300 mb-2">${a.summary}</p>
-          <div class="flex flex-wrap gap-3 text-xs">
-            <span class="text-slate-400">📌 <span class="text-slate-200">${a.action}</span></span>
-            <span class="text-slate-400">📤 Escalate to: <span class="text-blue-400 font-medium">${a.escalate}</span></span>
-            <span class="text-slate-400">⏱ <span class="${timingColour[a.timing] || 'text-slate-200'}">${a.timing}</span></span>
-          </div>
-          ${a.evidence && a.evidence.length ? `
-            <div class="mt-3 text-xs text-slate-300">
-              <div class="font-semibold text-slate-200 mb-1">Supporting evidence</div>
-              ${a.evidence.map(e => `<div><a href="${e.url}" target="_blank" rel="noreferrer" class="text-blue-400 hover:text-blue-300">${e.type}: ${e.title}</a></div>`).join('')}
+    <div id="refresh-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-xl max-w-md w-full shadow-2xl">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
+                <h3 class="font-bold text-white text-md">Agentic Fan-Out Pipeline Running</h3>
             </div>
-          ` : ''}
+            <div id="refresh-status-steps" class="space-y-2 text-xs font-mono text-slate-400">
+                <p id="step-1" class="text-slate-500">⏳ [1/4] Watchlist Agent mapping deep structural graph vectors...</p>
+                <p id="step-2" class="text-slate-500">⏳ [2/4] Footprint Agent connecting SEC EDGAR & yfinance endpoints...</p>
+                <p id="step-3" class="text-slate-500">⏳ [3/4] Multi-Dimensional Risk scoring Engine re-computing matrices...</p>
+                <p id="step-4" class="text-slate-500">⏳ [4/4] Generating finalized Executive report summary profiles...</p>
+            </div>
         </div>
-      </div>
     </div>
-  `).join('');
-}
 
-function filterAlerts(severity) {
-  _alertFilter = severity;
-  document.querySelectorAll('.alert-filter-btn').forEach(b => {
-    b.className = 'alert-filter-btn px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs';
-  });
-  event.target.className = 'alert-filter-btn active-filter px-2 py-1 rounded bg-blue-600 text-white text-xs';
-  renderAlerts();
-}
+    <div class="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-white">🛡️ Sentry Vendor Risk Intelligence Studio</h1>
+            <p class="text-xs text-slate-400">Target Ecosystem: <span class="font-semibold text-blue-400">{{ target_company }}</span> | Run: {{ run_id }} | Refreshed: <span id="generation-timestamp">{{ generated_at }}</span></p>
+        </div>
+        <div>
+            <button onclick="triggerPipelineRefresh()" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white rounded-lg shadow transition flex items-center gap-2">
+                🔄 Trigger Footprint Refresh
+            </button>
+        </div>
+    </div>
 
-// ── Graph node highlight from sidebar ─────────────────────────────────────
-function highlightNodeByName(name) {
-  switchTab('map');
-  const node = VIS_NODES.find(n => n.label === name || n.id === name);
-  if (node && window.network) {
-    window.network.selectNodes([node.id]);
-    window.network.focus(node.id, { scale: 1.2, animation: true });
-    if (node.meta) openModal(node.meta);
-  }
-}
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 transition group">
+            <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-blue-400 transition">Total Portfolio Value</p>
+            <h3 class="text-xl font-bold text-white mt-1">${{ "{:,.2f}".format(stats.total_portfolio_value) }}</h3>
+            <p class="text-[11px] text-slate-500 mt-0.5">Click to view aggregate expenditure data ↗</p>
+        </div>
+        <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-red-500 transition group">
+            <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-red-400 transition">Portfolio Value-at-Risk</p>
+            <h3 class="text-xl font-bold text-red-400 mt-1">${{ "{:,.2f}".format(stats.total_value_at_risk) }}</h3>
+            <p class="text-[11px] text-red-500/80 mt-0.5">Click to analyze downstream cascade exposure ↗</p>
+        </div>
+        <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-amber-500 transition group">
+            <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-amber-400 transition">Geopolitical HHI Score</p>
+            <h3 class="text-xl font-bold text-amber-400 mt-1">{{ stats.geo_concentration_hhi }}</h3>
+            <p class="text-[11px] text-slate-500 mt-0.5">Click to view regional asset distributions ↗</p>
+        </div>
+        <div onclick="switchTab('map')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-indigo-500 transition group">
+            <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-indigo-400 transition">Supply Chain Nodes</p>
+            <h3 class="text-xl font-bold text-white mt-1">{{ stats.total_entities }} Assets <span class="text-xs font-normal text-red-400">({{ stats.spof_count }} SPOFs)</span></h3>
+            <p class="text-[11px] text-slate-500 mt-0.5">Click to inspect supply chain graph topology ↗</p>
+        </div>
+    </div>
 
-// ── Export ────────────────────────────────────────────────────────────────
-function exportDashboard() {
-  const blob = new Blob([document.documentElement.outerHTML], { type:'text/html' });
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
-  a.download = 'vendor_risk_dashboard.html';
-  a.click();
-}
+    <div class="flex gap-2 mb-4 border-b border-slate-700 pb-px">
+        <button class="tab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('map')">🗺️ Supply Chain Map</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('analytics')">📊 Financial Impact & Scores</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('playbook')">⚡ Action Playbook & Comm Gen</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('dataroom')">🏢 Document Data Room</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('nodemgmt')">✏️ Node Management Registry</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-blue-400 hover:text-blue-300 bg-blue-950/20 border border-blue-900 rounded-t-md" onclick="switchTab('readme')">📖 Platform User Guide</button>
+    </div>
 
-function printReport() { window.print(); }
+    <div id="tab-map" class="tab-pane active">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700 h-[580px]" id="network-container"></div>
+            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-between">
+                <div id="node-inspector-panel">
+                    <h3 class="text-md font-bold text-white mb-2">🔍 Sourcing Node Inspector</h3>
+                    <p class="text-xs text-slate-400">Click any asset inside the left-to-right network graph to parse sub-tier dependencies, risk scores, and alternative supplier playbooks.</p>
+                    <div id="inspector-content" class="mt-4 hidden space-y-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-// ── Boot ──────────────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  initNetwork();
-  renderTopRiskList();
-});
-</script>
+    <div id="tab-analytics" class="tab-pane">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Portfolio Risk Transparency Console</h3>
+                <p class="text-xs text-slate-500 mb-4">Click any row in the list below to drill down and review the granular financial metrics, Altman Z-scores, and key risk drivers.</p>
+                <table class="w-full text-left text-xs text-slate-200">
+                    <thead>
+                        <tr class="border-b border-slate-700 text-slate-400 font-semibold">
+                            <th class="pb-2 pl-2">Supplier Entity Node Name</th>
+                            <th class="pb-2">Type</th>
+                            <th class="pb-2">Region</th>
+                            <th class="pb-2">Composite</th>
+                            <th class="pb-2 text-right pr-2">Value-at-Risk (VaR)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="analytics-table-body" class="divide-y divide-slate-700/40"></tbody>
+                </table>
+            </div>
+            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2">Regional Concentration Breakdown</h3>
+                <div class="space-y-3 mt-4" id="geo-distribution-container"></div>
+            </div>
+        </div>
+    </div>
 
-<!-- Report content styles -->
-<style>
-  #report-content h2 { color:#f1f5f9; font-size:1.1rem; font-weight:700; margin:1.5rem 0 0.5rem; border-bottom:1px solid #334155; padding-bottom:0.4rem; }
-  #report-content p  { color:#cbd5e1; line-height:1.7; margin-bottom:0.75rem; }
-  #report-content ul, #report-content ol { color:#cbd5e1; padding-left:1.5rem; margin-bottom:0.75rem; }
-  #report-content li { margin-bottom:0.4rem; line-height:1.6; }
-  #report-content strong { color:#f8fafc; }
-</style>
+    <div id="tab-playbook" class="tab-pane">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-1 bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-3">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Active Procurement Playbooks</h3>
+                <div id="playbook-trigger-list" class="space-y-2"></div>
+            </div>
+            <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200 mb-2">Automated Supplier Communication Workspace</h3>
+                    <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
+                        <div class="flex justify-between items-center text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2">
+                            <div><strong>Subject Line:</strong> <span id="comm-subject" class="text-blue-400">Select a playbook item...</span></div>
+                        </div>
+                        <textarea id="comm-body" class="w-full h-64 bg-transparent text-slate-200 font-mono text-xs focus:outline-none resize-none" readonly>Select an active alert playbook from the sidebar to compile contextual messaging content...</textarea>
+                    </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-700 flex justify-end">
+                    <button onclick="copyCommMessage()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white rounded transition shadow-sm">📋 Copy Communications Package to Clipboard</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
+    <div id="tab-dataroom" class="tab-pane">
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg max-w-5xl mx-auto">
+            <div class="flex items-start gap-4 border-b border-slate-700 pb-4 mb-4">
+                <div class="p-3 bg-blue-900/30 rounded-lg border border-blue-500/30 text-xl">🏢</div>
+                <div>
+                    <h2 class="text-md font-bold text-white">Document Processing Repository</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Manage and organize ingested statements of work, master service agreements, and vendor transaction records.</p>
+                </div>
+            </div>
+            <div class="border-2 border-dashed border-slate-600 hover:border-blue-500 rounded-xl p-8 text-center bg-slate-900/50 transition mb-6 cursor-pointer" onclick="alert('File browser invocation triggered.')">
+                <span class="text-2xl">📥</span>
+                <h4 class="text-sm font-semibold text-slate-200 mt-2">Upload Enterprise Supply Chain Documents</h4>
+                <p class="text-xs text-slate-500 mt-1">Supported file formats: PDF, CSV, XLSX, DOCX. Uploaded documents are automatically mapped to network graph nodes.</p>
+            </div>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-blue-400 mb-3">Linked Vector Embeddings</h3>
+            <div class="space-y-2" id="dataroom-list"></div>
+        </div>
+    </div>
+
+    <div id="tab-nodemgmt" class="tab-pane">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-1 bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-4">
+                <h3 id="form-action-title" class="text-sm font-bold uppercase tracking-wider text-slate-200">Add New Supply Chain Entity</h3>
+                <form id="add-node-form" onsubmit="handleManualNodeSubmit(event)" class="space-y-3 text-xs">
+                    <div>
+                        <label class="block text-slate-400 mb-1">Unique Identifier ID (Slug)</label>
+                        <input type="text" id="form-node-id" placeholder="e.g., asml-sub-de" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none disabled:bg-slate-950 disabled:text-slate-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">Company Display Name</label>
+                        <input type="text" id="form-node-name" placeholder="e.g., ASML Subcomponents GmbH" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none" required>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">Supply Chain Category Classification</label>
+                        <select id="form-node-type" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none">
+                            <option value="supplier">Supplier (Upstream Supply Chain)</option>
+                            <option value="customer">Customer (Downstream Channels)</option>
+                            <option value="partner">Strategic Alliance / Partner</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-slate-400 mb-1">HQ Country Code</label>
+                            <input type="text" id="form-node-country" placeholder="DE" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none" required>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">Industry Sector</label>
+                            <input type="text" id="form-node-industry" placeholder="Semiconductors" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none" required>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-slate-400 mb-1">Importance (1-10)</label>
+                            <input type="number" id="form-node-importance" min="1" max="10" step="0.1" value="5.0" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">Annual Spend ($)</label>
+                            <input type="number" id="form-node-spend" value="2500000" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none">
+                        </div>
+                    </div>
+                    <div id="form-edge-container" class="pt-2 border-t border-slate-700">
+                        <label class="block text-amber-400 font-semibold mb-1">Connect Network Dependency Edge to:</label>
+                        <select id="form-edge-target" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none"></select>
+                    </div>
+                    <div class="pt-2">
+                        <label class="block text-slate-400 mb-1">Attach SOW / RAG Context Artifact</label>
+                        <input type="file" class="text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer">
+                    </div>
+                    <button type="submit" id="form-submit-btn" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition mt-3">➕ Inject Node Into Live Topography</button>
+                    <button type="button" id="form-cancel-btn" onclick="resetNodeForm()" class="w-full py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium rounded transition mt-2 hidden">Cancel Workspace Edit</button>
+                </form>
+            </div>
+            <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3">Supply Chain Entity Directory</h3>
+                <div class="overflow-y-auto max-h-[480px]">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-slate-400">
+                                <th class="pb-2">Entity Name</th>
+                                <th class="pb-2">ID Slug</th>
+                                <th class="pb-2">Category</th>
+                                <th class="pb-2">Sector</th>
+                                <th class="pb-2">Region</th>
+                                <th class="pb-2 text-right pr-2">Workspace Controls</th>
+                            </tr>
+                        </thead>
+                        <tbody id="directory-table-body" class="divide-y divide-slate-700/40 text-slate-300"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-readme" class="tab-pane">
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 max-w-4xl mx-auto space-y-6">
+            <div>
+                <h2 class="text-lg font-bold text-white border-b border-slate-700 pb-2 flex items-center gap-2">📖 Sentry Engine Operations Blueprint</h2>
+                <p class="text-xs text-slate-300 mt-2 leading-relaxed">This analytics control center evaluates third-party and sub-tier supplier risks by monitoring digital data footprints and contract values. Use the tabs below to navigate the core modules:</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
+                    <h4 class="font-bold text-blue-400">🗺️ Supply Chain Map</h4>
+                    <p class="text-slate-400 mt-1">An interactive graph displaying your supply chain topology structured in a left-to-right hierarchy. Upstream vendors occupy the left quadrant, your company resides in the center, and downstream distribution vectors flow out toward the right.</p>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
+                    <h4 class="font-bold text-emerald-400">📊 Financial Impact & Scores</h4>
+                    <p class="text-slate-400 mt-1">Provides absolute transparency into your portfolio risks. Click any company's data row to expand its risk scores and verify the specific metrics used to calculate them.</p>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
+                    <h4 class="font-bold text-purple-400">⚡ Action Playbook & Comm Gen</h4>
+                    <p class="text-slate-400 mt-1">Automates risk mitigation workflows. Select any vulnerability flag to review pre-vetted dual-sourcing options and generate contextual outreach correspondence templates.</p>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
+                    <h4 class="font-bold text-amber-400">✏️ Node Management Registry</h4>
+                    <p class="text-slate-400 mt-1">Allows you to expand your network graph manually. Add custom operational entities and link them directly to dependencies across the interactive network array.</p>
+                </div>
+            </div>
+            <div class="pt-4 border-t border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">Composite Score Formulation Models</h3>
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-xs space-y-2 text-slate-300">
+                    <p>• <strong>Financial Parameters (30% Weight):</strong> Evaluates operational liquidity buffers, total debt ratios, and solvency markers via computed Altman Z-Scores.</p>
+                    <p>• <strong>Operational Parameters (30% Weight):</strong> Measures single-source delivery paths, business continuity plan coverage, and historical system audit results.</p>
+                    <p>• <strong>Compliance Parameters (20% Weight):</strong> Monitors corporate governance metrics, standard certification updates, and SEC disclosure filings.</p>
+                    <p>• <strong>Geopolitical Parameters (20% Weight):</strong> Evaluates territory infrastructure risks, regional trade adjustments, and manufacturing concentration factors.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let VIS_NODES_ARRAY = {{ vis_nodes_json }};
+        let VIS_EDGES_ARRAY = {{ vis_edges_json }};
+        let RISK_TABLE_DATA = {{ risk_table_json }};
+        const GEOPOLITICAL_WEIGHTS = {{ chart_data_json }};
+        const VAULT_DOCUMENTS = {{ uploaded_docs_json }};
+
+        let networkInstance = null;
+        let nodesDataSet = new vis.DataSet();
+        let edgesDataSet = new vis.DataSet();
+        let editingNodeId = null; // CRUD update selection trace register
+
+        function switchTab(name) {
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + name).classList.add('active');
+            if(event && event.currentTarget) { event.currentTarget.classList.add('active'); }
+            if (name === 'map') { renderLeftToRightNetwork(); }
+        }
+
+        // ── ENFORCE NATURAL UN-CLUSTERED LEFT-TO-RIGHT SPREAD topologY ──
+        function renderLeftToRightNetwork() {
+            const container = document.getElementById('network-container');
+            nodesDataSet.clear();
+            edgesDataSet.clear();
+
+            // Set up x-axis cloud distributions by entity category role
+            const structures = VIS_NODES_ARRAY.map((node, idx) => {
+                const category = node.group ? node.group.toLowerCase() : '';
+                let anchorX = 0;
+
+                if (category === 'target') {
+                    anchorX = 0;
+                } else if (category === 'supplier') {
+                    // Spread suppliers dynamically across distinct horizontal boundaries
+                    anchorX = (node.level === 2) ? -520 : -260;
+                } else {
+                    anchorX = (node.level === 2) ? 520 : 260;
+                }
+                
+                // Introduce mathematical variations to distribute positions smoothly along the Y-axis
+                node.x = anchorX + (Math.sin(idx) * 75);
+                node.y = (idx * 65) - (VIS_NODES_ARRAY.length * 32) + (Math.cos(idx) * 45);
+                return node;
+            });
+
+            nodesDataSet.add(structures);
+            edgesDataSet.add(VIS_EDGES_ARRAY);
+
+            const dataset = { nodes: nodesDataSet, edges: edgesDataSet };
+            const configuration = {
+                nodes: { shape: 'dot', shadow: true, physics: true },
+                edges: { smooth: { type: 'continuous', roundness: 0.4 }, arrows: "to" },
+                physics: {
+                    enabled: true,
+                    barnesHut: {
+                        gravitationalConstant: -4500, // Forces strong horizontal and vertical separation
+                        centralGravity: 0.08,
+                        springLength: 160,
+                        springConstant: 0.05,
+                        avoidOverlap: 1
+                    },
+                    stabilization: { iterations: 120 }
+                }
+            };
+
+            networkInstance = new vis.Network(container, dataset, configuration);
+            networkInstance.on("click", function(params) {
+                if (params.nodes.length > 0) { showInspector(params.nodes[0]); }
+            });
+        }
+
+        function showInspector(id) {
+            const node = VIS_NODES_ARRAY.find(n => n.id === id);
+            if (!node) return;
+            const content = document.getElementById('inspector-content');
+            content.classList.remove('hidden');
+
+            let backupsList = (node.meta.backups && node.meta.backups.length > 0) 
+                ? node.meta.backups.map(b => `<li class="bg-slate-900 px-2 py-1 border border-slate-700 rounded text-slate-300 text-[11px] font-mono">⚡ ${b}</li>`).join('')
+                : `<li class="text-slate-500 italic">No alternative vendors registered</li>`;
+
+            content.innerHTML = `
+                <div class="border-b border-slate-700 pb-2">
+                    <h4 class="text-md font-bold text-blue-400">${node.meta.name}</h4>
+                    <p class="text-[10px] text-slate-400 uppercase font-mono">${node.meta.type} | Sector: ${node.meta.industry}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
+                        <span class="text-[10px] text-slate-500 uppercase block">Risk Score</span>
+                        <strong class="text-sm font-bold text-white">${node.meta.score} / 100</strong>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
+                        <span class="text-[10px] text-slate-500 uppercase block">Calculated VaR</span>
+                        <strong class="text-sm font-bold text-red-400">$${node.meta.value_at_risk.toLocaleString()}</strong>
+                    </div>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Pre-Vetted Contingency Options:</span>
+                    <ul class="space-y-1">${backupsList}</ul>
+                </div>
+            `;
+        }
+
+        // ── score TRANSPARENCY CONSOLE MANAGEMENT ──
+        function showTransparencyConsole() {
+            const tbody = document.getElementById('analytics-table-body');
+            tbody.innerHTML = RISK_TABLE_DATA.map(r => `
+                <tr onclick="toggleTransparencyDropdown('${r.entity_id}')" class="hover:bg-slate-700/30 transition cursor-pointer border-b border-slate-800">
+                    <td class="py-3 pl-2 font-medium text-white flex items-center gap-2">▶ <span class="text-blue-400 hover:underline">${r.name}</span></td>
+                    <td class="py-3 uppercase font-mono text-[11px] text-slate-400">${r.type}</td>
+                    <td class="py-3 font-mono text-slate-300">${r.country}</td>
+                    <td class="py-3"><span class="px-2 py-0.5 rounded text-[11px] font-bold ${r.score >= 65 ? 'bg-red-950 text-red-400 border border-red-900' : 'bg-slate-900 text-emerald-400'}">${r.score}</span></td>
+                    <td class="py-3 text-right pr-2 font-mono font-bold text-slate-300">$${r.value_at_risk.toLocaleString()}</td>
+                </tr>
+                <tr id="dropdown-${r.entity_id}" class="hidden bg-slate-900/50">
+                    <td colspan="5" class="p-4">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+                            <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                                <p class="font-bold text-blue-400 mb-1">Financial Data Core (${r.meta.fin_score}/100)</p>
+                                <ul class="list-disc pl-4 space-y-1 text-slate-400 text-[11px]">${r.meta.fin_drivers.map(d => `<li>${d}</li>`).join('')}</ul>
+                            </div>
+                            <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                                <p class="font-bold text-emerald-400 mb-1">Operational Data Core (${r.meta.ops_score}/100)</p>
+                                <ul class="list-disc pl-4 space-y-1 text-slate-400 text-[11px]">${r.meta.ops_drivers.map(d => `<li>${d}</li>`).join('')}</ul>
+                            </div>
+                            <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                                <p class="font-bold text-amber-400 mb-1">Compliance Scope (${r.meta.comp_score}/100)</p>
+                                <p class="text-slate-400 text-[11px]">SEC disclosure requirements validated. No open litigation events flags discovered.</p>
+                            </div>
+                            <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                                <p class="font-bold text-purple-400 mb-1">Geopolitical Scope (${r.meta.geo_score}/100)</p>
+                                <p class="text-slate-400 text-[11px]">Territory concentration exposure checked against local sovereign disruption indices.</p>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            const geoContainer = document.getElementById('geo-distribution-container');
+            geoContainer.innerHTML = Object.entries(GEOPOLITICAL_WEIGHTS.geo_distribution).map(([country, percentage]) => `
+                <div>
+                    <div class="flex justify-between text-xs font-mono mb-1 text-slate-300">
+                        <span>Territory Code: <strong>${country}</strong></span>
+                        <span>Portfolio Share: ${percentage}%</span>
+                    </div>
+                    <div class="w-full bg-slate-900 h-2 rounded border border-slate-800 overflow-hidden">
+                        <div class="bg-blue-500 h-full" style="width: ${percentage}%"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleTransparencyDropdown(id) {
+            document.getElementById('dropdown-' + id).classList.toggle('hidden');
+        }
+
+        // ── REFRESH ENGINE SIMULATOR RUNNER ──
+        function triggerPipelineRefresh() {
+            const modal = document.getElementById('refresh-modal');
+            modal.classList.remove('hidden');
+
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            steps.forEach((step, idx) => {
+                setTimeout(() => {
+                    const el = document.getElementById(step);
+                    el.classList.remove('text-slate-500');
+                    el.classList.add('text-blue-400', 'font-bold');
+                    el.textContent = el.textContent.replace('⏳', '✅');
+                    if (idx > 0) {
+                        const prev = document.getElementById(steps[idx-1]);
+                        prev.classList.remove('text-blue-400');
+                        prev.classList.add('text-slate-400');
+                    }
+                }, (idx + 1) * 1100);
+            });
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                document.getElementById('generation-timestamp').textContent = new Date().toUTCString().replace('GMT', 'UTC');
+                alert("Agentic background assessment fan-out complete!");
+            }, 5200);
+        }
+
+        // ── COMPREHENSIVE NODE MANIPULATION REGISTRY (ADD & INLINE EDIT CONSOLE) ──
+        function renderNodeDirectory() {
+            const tbody = document.getElementById('directory-table-body');
+            tbody.innerHTML = VIS_NODES_ARRAY.map(n => `
+                <tr class="hover:bg-slate-700/20 border-b border-slate-800/60">
+                    <td class="py-2.5 font-medium text-white pl-2">${n.label}</td>
+                    <td class="py-2.5 font-mono text-slate-400 text-[11px]">${n.id}</td>
+                    <td class="py-2.5 uppercase text-slate-400 text-[10px]">${n.group || 'Supplier'}</td>
+                    <td class="py-2.5 text-slate-300">${n.meta?.industry || 'General Operations'}</td>
+                    <td class="py-2.5 font-mono text-slate-400">${n.meta?.country || 'US'}</td>
+                    <td class="py-2.5 text-right pr-2">
+                        <button onclick="initiateNodeEdit('${n.id}')" class="px-2.5 py-0.5 bg-amber-600/20 text-amber-400 border border-amber-500/30 rounded text-[11px] font-bold hover:bg-amber-600 hover:text-white transition">✏️ Edit</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            const selector = document.getElementById('form-edge-target');
+            selector.innerHTML = VIS_NODES_ARRAY.map(n => `<option value="${n.id}">${n.label} (${n.id})</option>`).join('');
+        }
+
+        function initiateNodeEdit(id) {
+            const node = VIS_NODES_ARRAY.find(n => n.id === id);
+            if (!node) return;
+
+            editingNodeId = id;
+            document.getElementById('form-action-title').textContent = `✏️ Edit Workspace Entity: ${node.label}`;
+            document.getElementById('form-submit-btn').textContent = "💾 Save Entity Modifications";
+            document.getElementById('form-cancel-btn').classList.remove('hidden');
+            document.getElementById('form-edge-container').classList.add('hidden'); // Lock relationships structure during properties updates
+
+            // Map variables inside input fields
+            document.getElementById('form-node-id').value = node.id;
+            document.getElementById('form-node-id').disabled = true;
+            document.getElementById('form-node-name').value = node.label;
+            document.getElementById('form-node-type').value = node.group;
+            document.getElementById('form-node-country').value = node.meta?.country || 'US';
+            document.getElementById('form-node-industry').value = node.meta?.industry || 'General Operations';
+            document.getElementById('form-node-importance').value = ((node.size - 20) / 3).toFixed(1);
+            document.getElementById('form-node-spend').value = node.meta?.value_at_risk || 2500000;
+        }
+
+        function handleManualNodeSubmit(event) {
+            event.preventDefault();
+            const id = document.getElementById('form-node-id').value.trim();
+            const name = document.getElementById('form-node-name').value.trim();
+            const type = document.getElementById('form-node-type').value;
+            const country = document.getElementById('form-node-country').value.trim().toUpperCase();
+            const industry = document.getElementById('form-node-industry').value.trim();
+            const importance = parseFloat(document.getElementById('form-node-importance').value);
+            const spend = parseFloat(document.getElementById('form-node-spend').value);
+            const targetEdge = document.getElementById('form-edge-target').value;
+
+            if (editingNodeId) {
+                // UPDATE RECORD MODE
+                const targetNode = VIS_NODES_ARRAY.find(n => n.id === editingNodeId);
+                if (targetNode) {
+                    targetNode.label = name;
+                    targetNode.group = type;
+                    targetNode.size = 20 + (importance * 3);
+                    targetNode.title = `Entity: ${name}\nType: ${type.toUpperCase()}\nHQ Region: ${country}\nRisk Score: ${targetNode.meta.score}/100\nValue-at-Risk: $${spend.toLocaleString()}`;
+                    
+                    targetNode.meta.name = name;
+                    targetNode.meta.type = type;
+                    targetNode.meta.country = country;
+                    targetNode.meta.industry = industry;
+                    targetNode.meta.value_at_risk = spend;
+                    
+                    const matchedTable = RISK_TABLE_DATA.find(r => r.entity_id === editingNodeId);
+                    if (matchedTable) {
+                        matchedTable.name = name;
+                        matchedTable.type = type.toUpperCase();
+                        matchedTable.country = country;
+                        matchedTable.value_at_risk = spend;
+                        matchedTable.meta = targetNode.meta;
+                    }
+                }
+                alert(`Node alterations successfully stored!`);
+                resetNodeForm();
+            } else {
+                // INSERT NEW RECORD MODE
+                if (VIS_NODES_ARRAY.some(n => n.id === id)) {
+                    alert("An entity with this code prefix identifier already exists.");
+                    return;
+                }
+
+                const mockNode = {
+                    id: id, label: name,
+                    title: `Entity: ${name}\nType: ${type.toUpperCase()}\nHQ Region: ${country}\nRisk Score: 45.0/100\nValue-at-Risk: $${spend.toLocaleString()}`,
+                    color: { background: '#3b82f6', border: '#0f172a' },
+                    size: 20 + (importance * 3),
+                    font: { color: '#f8fafc', size: 12 },
+                    group: type, level: 1,
+                    meta: {
+                        entity_id: id, name: name, ticker: "—", type: type, industry: industry, country: country,
+                        depth: 1, score: 45.0, risk_level: "medium", narrative: "Manually registered sourcing component asset.",
+                        fin_score: 50.0, ops_score: 50.0, comp_score: 50.0, geo_score: 50.0, value_at_risk: spend,
+                        backups: [], fin_drivers: ["Manual data insertion baseline"], ops_drivers: ["Awaiting document execution audit"]
+                    }
+                };
+
+                VIS_NODES_ARRAY.push(mockNode);
+                VIS_EDGES_ARRAY.push({ from: id, to: targetEdge, label: "supplies_component", width: 2, color: { color: '#64748b' }, arrows: "to" });
+                
+                RISK_TABLE_DATA.push({
+                    entity_id: id, name: name, ticker: "—", type: type.toUpperCase(), country: country,
+                    score: 45.0, level: "medium", fin: 50.0, ops: 50.0, comp: 50.0, geo: 50.0, value_at_risk: spend, meta: mockNode.meta
+                });
+
+                alert(`Node "${name}" successfully compiled and injected!`);
+                document.getElementById('add-node-form').reset();
+            }
+
+            renderNodeDirectory();
+            showTransparencyConsole();
+            switchTab('map');
+        }
+
+        function resetNodeForm() {
+            editingNodeId = null;
+            document.getElementById('form-action-title').textContent = "Add New Supply Chain Entity";
+            document.getElementById('form-submit-btn').textContent = "➕ Inject Node Into Live Topography";
+            document.getElementById('form-cancel-btn').classList.add('hidden');
+            document.getElementById('form-edge-container').classList.remove('hidden');
+            document.getElementById('form-node-id').disabled = false;
+            document.getElementById('add-node-form').reset();
+        }
+
+        const COMPILATION_SCHEDULER = [
+            { id: 1, title: "Mitigate Single-Source Value-at-Risk Vector", subject: "Strategic Sourcing Evaluation & Continuity Protocol Request", body: "Dear Sourcing Operations Team,\n\nOur system has identified a single-source configuration tracking above normal threshold metrics.\n\nTo ensure supply chain stabilization, please deliver your regional continuity matrix or asset isolation blueprint plans within 5 business days.\n\nBest Regards,\nStrategic Procurement and Risk Operations Center" },
+            { id: 2, title: "Resolve Open Compliance Validation Gap", subject: "Mandatory Corporate Governance Certification Update Notice", body: "Dear Business Partner,\n\nOur automated verification pipeline has identified an outstanding documentation refresh requirement linked to your governance file.\n\nPlease upload your updated entity compliance certificates directly to our workspace vault portal immediately to ensure uninterrupted transactions.\n\nBest Regards,\nCorporate Sourcing Governance & Audit Review Board" }
+        ];
+
+        function renderPlaybooks() {
+            document.getElementById('playbook-trigger-list').innerHTML = COMPILATION_SCHEDULER.map(p => `
+                <button onclick="activatePlaybook(${p.id})" class="w-full text-left p-3 bg-slate-900 text-xs font-semibold rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-900/80 transition block text-slate-300">
+                    ⚡ ${p.title}
+                </button>
+            `).join('');
+        }
+
+        function activatePlaybook(id) {
+            const playbook = COMPILATION_SCHEDULER.find(p => p.id === id);
+            document.getElementById('comm-subject').textContent = playbook.subject;
+            document.getElementById('comm-body').value = playbook.body;
+        }
+
+        function copyCommMessage() {
+            navigator.clipboard.writeText(document.getElementById('comm-body').value);
+            alert("Communications script copied to system clipboard memory!");
+        }
+
+        function renderDataRoom() {
+            document.getElementById('dataroom-list').innerHTML = VAULT_DOCUMENTS.map(d => `
+                <div class="flex justify-between items-center bg-slate-900 p-3 rounded-lg border border-slate-800 text-xs">
+                    <div class="flex items-center gap-3">
+                        <span class="text-lg">📄</span>
+                        <div>
+                            <p class="font-bold text-slate-200">${d.name} <span class="font-mono text-[10px] text-slate-500">(${d.size})</span></p>
+                            <p class="text-[10px] text-slate-400 mt-0.5">Classification Type: <strong>${d.type}</strong></p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950 text-blue-400 border border-blue-900">Vectorized & Active via RAG</span>
+                        <p class="text-[9px] text-slate-500 mt-1">Associated Nodes: ${d.linked_nodes.join(', ')}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.onload = function() {
+            renderLeftToRightNetwork();
+            showTransparencyConsole();
+            renderPlaybooks();
+            renderDataRoom();
+            renderNodeDirectory();
+        };
+    </script>
 </body>
 </html>
