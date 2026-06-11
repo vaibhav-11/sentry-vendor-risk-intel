@@ -209,6 +209,32 @@ MAX_DEPTH=3                 # Supply chain depth
 
 ## Command 
 
+## Terminal 1
+# 1. Re-enforce your stable system preload path variables
+```bash
+export SYSTEM_HSA=$(find /opt/rocm/ -name "libhsa-runtime64.so*" | head -n 1)
+export SYSTEM_ROCSOLVER=$(find /opt/rocm/ -name "librocsolver.so*" | head -n 1)
+export SYSTEM_HIPSOLVER=$(find /opt/rocm/ -name "libhipsolver.so*" | head -n 1)
+export SYSTEM_ROCSPARSE=$(find /opt/rocm/ -name "librocsparse.so*" | head -n 1)
+export SYSTEM_HIPSPARSE=$(find /opt/rocm/ -name "libhipsparse.so*" | head -n 1)
+
+export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64:/opt/rocm/rocsolver/lib:/opt/rocm/hipsolver/lib:/opt/rocm/rocsparse/lib:/opt/rocm/hipsparse/lib:$LD_LIBRARY_PATH
+export LD_PRELOAD="$SYSTEM_HSA:$SYSTEM_ROCSOLVER:$SYSTEM_HIPSOLVER:$SYSTEM_ROCSPARSE:$SYSTEM_HIPSPARSE:$LD_PRELOAD"
+export HSA_OVERRIDE_GFX_VERSION=9.4.2
+export VLLM_USE_TRITON_FLASH_ATTN=1
+```
+
+# 2. Launch the standard, un-wrapped entrypoint directly
+```bash
+python -m vllm.entrypoints.openai.api_server \
+    --model /workspace/shared/sentry-vendor-risk-intel/models/Qwen2.5-3B-Instruct-GPTQ-Int4 \
+    --quantization gptq \
+    --dtype float16 \
+    --max-model-len 4096 \
+    --gpu-memory-utilization 0.25 \
+    --host 0.0.0.0 --port 8000
+```
+
 ```bash
 python scripts/run_pipeline.py \
     --company "Apple Inc" \
