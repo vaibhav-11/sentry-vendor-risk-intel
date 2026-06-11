@@ -65,66 +65,178 @@ def _score_financial(fp: FootprintData) -> DimensionScore:
         points.append(z_score)
     else:
         gaps.append("Altman Z-Score: insufficient balance sheet data")
+def _score_financial(fp: FootprintData) -> DimensionScore:
+    fin = fp.financials
+    score = 50.0    # default neutral score for missing data
+    drivers: list[str] = []
+    gaps: list[str] = []
+    points: list[float] = []
 
-    # Revenue growth trend
+    if fin is None:
+        gaps.append("No financial data available (private company or fetch error)")
+        return DimensionScore(score=50.0, confidence=0.2, key_drivers=drivers, data_gaps=gaps)
+
+    # Altman Z-Score (0-100 mapped from Z-score)
+    if fin.altman_z_score is not None:
+        z = fin.altman_z_score
+        if z < 1.81:
+            z_score = 85.0
+            drivers.append(f"Altman Z-Score {z:.2f} — distress zone (< 1.81)")
+        elif z < 2.99:
+            z_score = 50.0
+            drivers.append(f"Altman Z-Score {z:.2f} — grey zone")
+        else:
+            z_score = 15.0
+        points.append(z_score)
+    else:
+        gaps.append("Altman Z-Score: insufficient balance sheet data")
+def _score_financial(fp: FootprintData) -> DimensionScore:
+    fin = fp.financials
+    score = 50.0    # default neutral score for missing data
+    drivers: list[str] = []
+    gaps: list[str] = []
+    points: list[float] = []
+
+    if fin is None:
+        gaps.append("No financial data available (private company or fetch error)")
+        return DimensionScore(score=50.0, confidence=0.2, key_drivers=drivers, data_gaps=gaps)
+
+    # Altman Z-Score (0-100 mapped from Z-score)
+    if fin.altman_z_score is not None:
+        z = fin.altman_z_score
+        if z < 1.81:
+            z_score = 85.0
+            drivers.append(f"Altman Z-Score {z:.2f} — distress zone (< 1.81)")
+        elif z < 2.99:
+            z_score = 50.0
+            drivers.append(f"Altman Z-Score {z:.2f} — grey zone")
+        else:
+            z_score = 15.0
+        points.append(z_score)
+    else:
+        gaps.append("Altman Z-Score: insufficient balance sheet data")
+def _score_financial(fp: FootprintData) -> DimensionScore:
+    fin = fp.financials
+    score = 50.0    # default neutral score for missing data
+    drivers: list[str] = []
+    gaps: list[str] = []
+    points: list[float] = []
+
+    if fin is None:
+        gaps.append("No financial data available (private company or fetch error)")
+        return DimensionScore(score=50.0, confidence=0.2, key_drivers=drivers, data_gaps=gaps)
+
+    # Altman Z-Score (0-100 mapped from Z-score)
+    if fin.altman_z_score is not None:
+        z = fin.altman_z_score
+        if z < 1.81:
+            z_score = 85.0
+            drivers.append(f"Altman Z-Score {z:.2f} — distress zone (< 1.81)")
+        elif z < 2.99:
+            z_score = 50.0
+            drivers.append(f"Altman Z-Score {z:.2f} — grey zone")
+        else:
+            z_score = 15.0
+        points.append(z_score)
+    else:
+        gaps.append("Altman Z-Score: insufficient balance sheet data")
+def _score_financial(fp: FootprintData) -> DimensionScore:
+    fin = fp.financials
+    score = 50.0    # default neutral score for missing data
+    drivers: list[str] = []
+    gaps: list[str] = []
+    points: list[float] = []
+
+    if fin is None:
+        gaps.append("No financial data available (private company or fetch error)")
+        return DimensionScore(score=50.0, confidence=0.2, key_drivers=drivers, data_gaps=gaps)
+
+    # Altman Z-Score (0-100 mapped from Z-score)
+    if fin.altman_z_score is not None:
+        z = fin.altman_z_score
+        if z < 1.81:
+            z_score = 85.0
+            drivers.append(f"Altman Z-Score {z:.2f} — distress zone (< 1.81)")
+        elif z < 2.99:
+            z_score = 50.0
+            drivers.append(f"Altman Z-Score {z:.2f} — grey zone")
+        else:
+            z_score = 15.0
+        points.append(z_score)
+    else:
+        gaps.append("Altman Z-Score: insufficient balance sheet data")
+# Refactor inside src/risk/scorer.py
+
+def _score_financial(fp: FootprintData) -> DimensionScore:
+    fin = fp.financials
+    drivers: list[str] = []
+    gaps: list[str] = []
+    points: list[float] = []
+
+    if fin is None:
+        gaps.append("No financial telemetry discovered in current pipeline iteration")
+        return DimensionScore(score=50.0, confidence=0.2, key_drivers=["Missing historical balance sheet tracking"], data_gaps=gaps)
+
+    # Altman Z-Score Driver Tracking
+    if fin.altman_z_score is not None:
+        z = fin.altman_z_score
+        if z < 1.81:
+            points.append(85.0)
+            drivers.append(f"Altman Z-Score {z:.2f}: Distress Zone (High Insolvency Risk)")
+        elif z < 2.99:
+            points.append(50.0)
+            drivers.append(f"Altman Z-Score {z:.2f}: Grey Zone (Unsettled Volatility)")
+        else:
+            points.append(15.0)
+            drivers.append(f"Altman Z-Score {z:.2f}: Safe Zone (Strong Capital Buffer)")
+    else:
+        gaps.append("Altman Z-Score: Insufficient operational working capital data")
+
+    # Revenue Growth Driver Tracking
     if fin.revenue_growth_yoy_pct is not None:
         g = fin.revenue_growth_yoy_pct
         if g < -15:
-            rev_score = 80.0
-            drivers.append(f"Revenue declining {g:.1f}% YoY")
-        elif g < -5:
-            rev_score = 60.0
-            drivers.append(f"Revenue declining {g:.1f}% YoY")
+            points.append(80.0)
+            drivers.append(f"Revenue structural decline: {g:.1f}% YoY contraction")
         elif g < 0:
-            rev_score = 45.0
+            points.append(45.0)
+            drivers.append(f"Revenue contraction warning: {g:.1f}% YoY drop")
         else:
-            rev_score = max(5.0, 30.0 - g)   # growth reduces score
-        points.append(rev_score)
+            points.append(max(5.0, 30.0 - g))
+            drivers.append(f"Revenue expansion verified: +{g:.1f}% YoY growth")
     else:
-        gaps.append("Revenue growth: no YoY data")
+        gaps.append("Revenue Growth: Trailing metric not exposed")
 
-    # Debt-to-Equity
+    # Leverage (Debt to Equity)
     if fin.debt_to_equity is not None:
         de = fin.debt_to_equity
         if de > 200:
-            de_score = 85.0
-            drivers.append(f"D/E ratio {de:.0f} — highly leveraged")
+            points.append(85.0)
+            drivers.append(f"Debt-to-Equity {de:.1f}%: Hyper-leveraged structural posture")
         elif de > 100:
-            de_score = 65.0
-            drivers.append(f"D/E ratio {de:.0f} — elevated leverage")
-        elif de > 50:
-            de_score = 40.0
+            points.append(65.0)
+            drivers.append(f"Debt-to-Equity {de:.1f}%: Elevated balance sheet debt load")
         else:
-            de_score = 15.0
-        points.append(de_score)
-    else:
-        gaps.append("Debt-to-equity: not available")
+            points.append(15.0)
+            drivers.append(f"Debt-to-Equity {de:.1f}%: Conservative leverage alignment")
 
-    # Current ratio
+    # Liquidity (Current Ratio)
     if fin.current_ratio is not None:
         cr = fin.current_ratio
         if cr < 1.0:
-            cr_score = 80.0
-            drivers.append(f"Current ratio {cr:.2f} — potential liquidity risk")
-        elif cr < 1.5:
-            cr_score = 50.0
+            points.append(80.0)
+            drivers.append(f"Current Ratio {cr:.2f}: Illiquidity threat (Current Liabilities exceed Assets)")
         else:
-            cr_score = 15.0
-        points.append(cr_score)
-    else:
-        gaps.append("Current ratio: not available")
+            points.append(15.0)
+            drivers.append(f"Current Ratio {cr:.2f}: Fluid working asset liquidity position")
 
-    if points:
-        score = round(sum(points) / len(points), 1)
-        confidence = min(1.0, 0.4 + 0.15 * len(points))
-    else:
-        score = 50.0
-        confidence = 0.2
+    score = round(sum(points) / len(points), 1) if points else 50.0
+    confidence = min(1.0, 0.4 + 0.15 * len(points))
 
     return DimensionScore(
         score=score,
         confidence=round(confidence, 2),
-        key_drivers=drivers[:3],
+        key_drivers=drivers,  # Send the full array of actual metrics down the pipeline
         data_gaps=gaps,
     )
 

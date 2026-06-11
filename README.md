@@ -207,5 +207,17 @@ MAX_ENTITIES=80             # Cap supply chain node count
 MAX_DEPTH=3                 # Supply chain depth
 ```
 
+## Command 
+
+```bash
+python scripts/run_pipeline.py \
+    --company "Apple Inc" \
+    --ticker AAPL \
+    --backend vllm \
+    --vllm-url http://localhost:8000/v1 \
+    --vllm-model /workspace/shared/sentry-vendor-risk-intel/models/Qwen2.5-3B-Instruct-GPTQ-Int4
+```
+
+
 ---
 

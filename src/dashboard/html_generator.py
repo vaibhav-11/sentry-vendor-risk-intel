@@ -34,26 +34,22 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
         size      = 20 + entity.importance_score * 3   
 
         var_val = 0.0
-        backups = []
+        lineage_payload = {}
         if ps.graph_metrics and entity.id in ps.graph_metrics.node_metrics:
             nm_data = ps.graph_metrics.node_metrics[entity.id]
             var_val = nm_data.value_at_risk_usd
-            backups = nm_data.alternative_suppliers
+            if nm_data.mathematical_lineage:
+                lineage_payload = nm_data.mathematical_lineage.model_dump()
 
-        tooltip_text = (
-            f"Entity: {entity.name}\n"
-            f"Type: {entity.entity_type.value.title()}\n"
-            f"HQ Region: {entity.hq_country or 'Unknown'}\n"
-            f"Risk Score: {score:.1f}/100\n"
-            f"Value-at-Risk: ${var_val:,.2f}"
-        )
+        # Map dynamic evidence registry data from the footprint layer
+        provenance_payload = {}
+        fp_record = ps.footprint_data.get(entity.id)
+        if fp_record and hasattr(fp_record, 'provenance_anchors'):
+            provenance_payload = {k: v.model_dump() for k, v in fp_record.provenance_anchors.items()}
 
         nodes.append({
             "id":    entity.id,
             "label": entity.name,
-            "title": tooltip_text,
-            "color": {"background": colour, "border": "#0f172a",
-                      "highlight": {"background": colour, "border": "#f8fafc"}},
             "size":  size,
             "font":  {"color": "#f8fafc", "size": 12},
             "group": entity.entity_type.value,
@@ -65,23 +61,25 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
                 "type":        entity.entity_type.value,
                 "industry":    entity.industry or "General Operations",
                 "country":     entity.hq_country or "US",
-                "depth":       entity.depth_level,
                 "score":       round(score, 1),
                 "risk_level":  level,
-                "narrative":   score_obj.narrative if score_obj else "Normal baseline operations detected.",
+                "narrative":   score_obj.narrative if score_obj else "Baseline audit cycle complete.",
+                
+                # REMOVE STRIPPED FALLBACKS — MAP DIRECTLY TO DATA SCHEMAS
                 "fin_score":   round(score_obj.financial.score, 1) if score_obj else 50.0,
                 "ops_score":   round(score_obj.operational.score, 1) if score_obj else 50.0,
                 "comp_score":  round(score_obj.compliance.score, 1) if score_obj else 50.0,
                 "geo_score":   round(score_obj.geopolitical.score, 1) if score_obj else 50.0,
+                
+                "fin_drivers": score_obj.financial.key_drivers if score_obj else [],
+                "ops_drivers": score_obj.operational.key_drivers if score_obj else [],
+                
                 "value_at_risk": var_val,
-                "backups":     backups,
-                "fin_drivers": score_obj.financial.key_drivers if score_obj and score_obj.financial.key_drivers else ["Stable operating margins", "Adequate liquidity buffers"],
-                "ops_drivers": score_obj.operational.key_drivers if score_obj and score_obj.operational.key_drivers else ["Standard business continuity plan active"],
-                "evidence":    [],
+                "mathematical_lineage": lineage_payload,
+                "provenance_anchors": provenance_payload
             },
         })
     return nodes
-
 
 def _build_vis_edges(ps: PipelineState) -> list[dict]:
     edges = []

@@ -109,6 +109,24 @@ class SECFiling(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     url: Optional[str] = None
 
+class SourceProvenanceAnchor(BaseModel):
+    anchor_key: str          # e.g., "[SEC-10K-2026]", "[NEWS-2026-06-11]"
+    source_name: str         # e.g., "SEC EDGAR", "Bloomberg News"
+    source_url: str
+    section_reference: str   # e.g., "Item 1A. Risk Factors"
+    extracted_at: datetime = Field(default_factory=datetime.utcnow)
+    verbatim_snippet: str    # Verbatim text fragment for side-by-side UI view
+
+class MathematicalLineage(BaseModel):
+    equation_model: str = "VaR = DirectSpend + (Sum(DownstreamImportance * ScalingFactor) * (BaseRisk / 100))"
+    direct_spend_usd: float
+    betweenness_centrality: float
+    cascade_multiplier: float
+    calculated_centrality_factor: float
+    downstream_dependent_nodes_count: int
+    raw_propagated_exposure_usd: float
+    composite_risk_weight: float
+    final_value_at_risk_usd: float
 
 # ── Internal Vendor Registry (synthetic data) ─────────────────────────────────
 
@@ -147,6 +165,7 @@ class FootprintData(BaseModel):
     news_sentiment_avg: float = 0.0
     negative_news_count: int = 0
     risk_news_headlines: list[str] = Field(default_factory=list)
+    provenance_anchors: dict[str, SourceProvenanceAnchor] = Field(default_factory=dict)
 
 
 # ── Risk Scoring ──────────────────────────────────────────────────────────────
@@ -186,6 +205,7 @@ class NodeMetrics(BaseModel):
     direct_spend_usd: float = 0.0
     value_at_risk_usd: float = 0.0
     alternative_suppliers: list[str] = Field(default_factory=list)
+    mathematical_lineage: Optional[MathematicalLineage] = None
 
 
 class GraphMetrics(BaseModel):

@@ -6,7 +6,7 @@ quantifies the financial Value-at-Risk (VaR), and measures regional concentratio
 
 import logging
 import networkx as nx
-from src.models import NodeMetrics, GraphMetrics, RiskScore
+from src.models import MathematicalLineage, NodeMetrics, GraphMetrics, RiskScore
 
 logger = logging.getLogger(__name__)
 
@@ -33,41 +33,44 @@ def compute_node_metrics(
         "logistics": ["FedEx Custom Critical (US)", "DHL Global Forwarding (DE)"]
     }
 
+    # Refactor loop inside compute_node_metrics in src/graph/cascading_risk.py
+
     for node_id in G.nodes():
         in_deg  = G.in_degree(node_id)
         out_deg = G.out_degree(node_id)
         bc      = betweenness.get(node_id, 0.0)
 
-        try:
-            descendants = nx.descendants(G, node_id)
-        except Exception:
-            descendants = set()
+        try: descendants = nx.descendants(G, node_id)
+        except Exception: descendants = set()
         blast_radius = round(len(descendants) / max(total_nodes - 1, 1) * 100, 1)
 
         is_spof = (bc > 0.15 and in_deg <= 1) or blast_radius > 40
-
         base_score = risk_scores[node_id].composite_score if node_id in risk_scores else 50.0
+        
         centrality_factor = 1.0 + (bc * cascade_multiplier)
         cascade_score = min(100.0, round(base_score * centrality_factor, 1))
 
-        # ── EXTRACT OR DERIVE PROCUREMENT STRATEGIC SPEND DATA ──
         node_attrs = G.nodes[node_id]
         importance = node_attrs.get("importance_score", 5.0)
-        
-        # Pull mock financial value if internal record isn't fully linked
         direct_spend = node_attrs.get("annual_spend_usd", float(importance * 1_850_000))
         
-        # Value at Risk calculation = direct contract spend + downstream dependent impact exposures
-        propagated_exposure = sum([float(G.nodes[d].get("importance_score", 5.0) * 450_000) for d in descendants])
-        calculated_var = direct_spend + (propagated_exposure * (base_score / 100.0))
+        # Compute downstream dependent value exposure using a structural model
+        ASSET_SCALING_FACTOR = 450000.0
+        propagated_exposure = sum([float(G.nodes[d].get("importance_score", 5.0) * ASSET_SCALING_FACTOR) for d in descendants])
+        risk_weight_ratio = base_score / 100.0
+        calculated_var = direct_spend + (propagated_exposure * risk_weight_ratio)
 
-        # Map smart alternative backup arrays based on node properties
-        industry_lower = node_attrs.get("industry", "manufacturing").lower()
-        backups = mock_backups.get("semiconductor")
-        if "software" in industry_lower or "cloud" in industry_lower:
-            backups = mock_backups.get("software")
-        elif "logistics" in industry_lower or "shipping" in industry_lower:
-            backups = mock_backups.get("logistics")
+        # Instantiate the complete mathematical audit trail
+        lineage = MathematicalLineage(
+            direct_spend_usd=round(direct_spend, 2),
+            betweenness_centrality=round(bc, 4),
+            cascade_multiplier=cascade_multiplier,
+            calculated_centrality_factor=round(centrality_factor, 4),
+            downstream_dependent_nodes_count=len(descendants),
+            raw_propagated_exposure_usd=round(propagated_exposure, 2),
+            composite_risk_weight=round(risk_weight_ratio, 4),
+            final_value_at_risk_usd=round(calculated_var, 2)
+        )
 
         node_metrics[node_id] = NodeMetrics(
             entity_id=node_id,
@@ -79,8 +82,58 @@ def compute_node_metrics(
             cascade_risk_score=cascade_score,
             direct_spend_usd=round(direct_spend, 2),
             value_at_risk_usd=round(calculated_var, 2),
-            alternative_suppliers=backups or ["Alternative Sourcing Option A", "Alternative Sourcing Option B"]
+            alternative_suppliers=node_attrs.get("backups", ["Alternative Provider Alpha"]),
+            mathematical_lineage=lineage # Attach the tracking lineage to the pipeline state
         )
+
+    # for node_id in G.nodes():
+    #     in_deg  = G.in_degree(node_id)
+    #     out_deg = G.out_degree(node_id)
+    #     bc      = betweenness.get(node_id, 0.0)
+
+    #     try:
+    #         descendants = nx.descendants(G, node_id)
+    #     except Exception:
+    #         descendants = set()
+    #     blast_radius = round(len(descendants) / max(total_nodes - 1, 1) * 100, 1)
+
+    #     is_spof = (bc > 0.15 and in_deg <= 1) or blast_radius > 40
+
+    #     base_score = risk_scores[node_id].composite_score if node_id in risk_scores else 50.0
+    #     centrality_factor = 1.0 + (bc * cascade_multiplier)
+    #     cascade_score = min(100.0, round(base_score * centrality_factor, 1))
+
+    #     # ── EXTRACT OR DERIVE PROCUREMENT STRATEGIC SPEND DATA ──
+    #     node_attrs = G.nodes[node_id]
+    #     importance = node_attrs.get("importance_score", 5.0)
+        
+    #     # Pull mock financial value if internal record isn't fully linked
+    #     direct_spend = node_attrs.get("annual_spend_usd", float(importance * 1_850_000))
+        
+    #     # Value at Risk calculation = direct contract spend + downstream dependent impact exposures
+    #     propagated_exposure = sum([float(G.nodes[d].get("importance_score", 5.0) * 450_000) for d in descendants])
+    #     calculated_var = direct_spend + (propagated_exposure * (base_score / 100.0))
+
+    #     # Map smart alternative backup arrays based on node properties
+    #     industry_lower = node_attrs.get("industry", "manufacturing").lower()
+    #     backups = mock_backups.get("semiconductor")
+    #     if "software" in industry_lower or "cloud" in industry_lower:
+    #         backups = mock_backups.get("software")
+    #     elif "logistics" in industry_lower or "shipping" in industry_lower:
+    #         backups = mock_backups.get("logistics")
+
+    #     node_metrics[node_id] = NodeMetrics(
+    #         entity_id=node_id,
+    #         betweenness_centrality=round(bc, 4),
+    #         in_degree=in_deg,
+    #         out_degree=out_deg,
+    #         is_single_point_of_failure=is_spof,
+    #         blast_radius_pct=blast_radius,
+    #         cascade_risk_score=cascade_score,
+    #         direct_spend_usd=round(direct_spend, 2),
+    #         value_at_risk_usd=round(calculated_var, 2),
+    #         alternative_suppliers=backups or ["Alternative Sourcing Option A", "Alternative Sourcing Option B"]
+    #     )
 
     return node_metrics
 
