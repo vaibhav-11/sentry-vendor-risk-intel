@@ -12,6 +12,8 @@ from typing import Any
 
 from src.models import Entity, EntityRelationship, EntityType, PipelineState
 from src.llm.interface import get_llm_client
+from src.data_sources.ticker_resolver import resolve_entity_tickers
+from src.data_sources.aggregator import load_vendor_registry
 from config.prompts import WATCHLIST_PROMPT, SYSTEM_RISK_ANALYST
 from config.settings import settings
 
@@ -22,6 +24,22 @@ def _slug(name: str, suffix: str = "") -> str:
     """Generate a URL-safe entity ID from company name."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return f"{slug}-{suffix}" if suffix else slug
+
+
+def _attach_internal_spend(entities: list[Entity]) -> None:
+    """
+    Populate entity.annual_spend_usd from the internal vendor registry where a
+    record exists (matched by name). Leaves it None for entities we have no
+    procurement record for — cascade analysis falls back to an importance proxy.
+    """
+    registry = load_vendor_registry()
+    matched = 0
+    for entity in entities:
+        record = registry.get(entity.name.lower())
+        if record and record.annual_spend_usd:
+            entity.annual_spend_usd = record.annual_spend_usd
+            matched += 1
+    logger.info(f"Attached internal spend to {matched}/{len(entities)} entities")
 
 
 def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[EntityRelationship]]:
@@ -148,6 +166,17 @@ async def watchlist_node(state: dict[str, Any]) -> dict[str, Any]:
             f"Capping entities from {len(entities)} to {settings.max_entities}"
         )
         entities = entities[:settings.max_entities]
+
+    # Ground tickers to real market symbols — the LLM's tickers are unreliable and
+    # null/wrong tickers starve every downstream financial/SEC/news fetch.
+    try:
+        await resolve_entity_tickers(entities)
+    except Exception as e:
+        ps.add_error(f"Ticker resolution failed: {e}")
+        logger.warning(f"[Watchlist] Ticker resolution error: {e}")
+
+    # Attach real internal procurement spend where we have a registry record.
+    _attach_internal_spend(entities)
 
     ps.entities    = [target_entity] + entities
     ps.relationships = relationships

@@ -25,7 +25,7 @@ def build_graph(
     G = nx.DiGraph()
 
     for entity in entities:
-        G.add_node(entity.id, **{
+        attrs = {
             "name": entity.name,
             "ticker": entity.ticker or "",
             "entity_type": entity.entity_type.value,
@@ -33,6 +33,7 @@ def build_graph(
             "importance_score": entity.importance_score,
             "industry": entity.industry,
             "hq_country": entity.hq_country,
+            "is_public": entity.is_public,
             # Risk fields (populated after scoring)
             "composite_score": 0.0,
             "risk_level": "unknown",
@@ -40,7 +41,12 @@ def build_graph(
             "operational_score": 0.0,
             "compliance_score": 0.0,
             "geopolitical_score": 0.0,
-        })
+        }
+        # Only set spend when we actually know it, so cascade analysis can fall
+        # back to its importance proxy for entities with no procurement record.
+        if entity.annual_spend_usd is not None:
+            attrs["annual_spend_usd"] = entity.annual_spend_usd
+        G.add_node(entity.id, **attrs)
 
     for rel in relationships:
         if rel.source_id in G and rel.target_id in G:

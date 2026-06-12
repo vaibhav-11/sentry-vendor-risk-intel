@@ -58,6 +58,8 @@ class Entity(BaseModel):
     hq_country: str = ""                           # ISO-2 code, e.g. "TW"
     description: str = ""
     wikipedia_url: Optional[str] = None
+    annual_spend_usd: Optional[float] = None       # real procurement spend (from internal registry)
+    is_public: bool = True                          # False = no resolvable public listing (private/unlisted)
 
 
 class EntityRelationship(BaseModel):
