@@ -262,13 +262,6 @@ class PipelineState(BaseModel):
     report_html: str = ""
     dashboard_html: str = ""
 
-    # PROVISIONED CUSTOMER DATA ROOM (FOR DEMONSTRATING ENTERPRISE RAG CAPABILITY)
-    uploaded_documents: list[dict] = Field(default_factory=lambda: [
-        {"name": "SOW_Core_Infrastructure_v3.pdf", "type": "Statement of Work", "size": "412 KB", "status": "Vectorized & Synced via RAG", "linked_nodes": ["tsmc-tw", "asml-nl"]},
-        {"name": "Master_Sourcing_Agreement_2025.pdf", "type": "MSA Terms", "size": "1.8 MB", "status": "Vectorized & Synced via RAG", "linked_nodes": ["foxconn-hi"]},
-        {"name": "Enterprise_CRM_Sourcing_Mappings.csv", "type": "ERP/CRM Direct Integration", "size": "84 KB", "status": "Live Feed Mapping Active", "linked_nodes": ["all"]}
-    ])
-
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     errors: list[str] = Field(default_factory=list)

@@ -11,9 +11,36 @@ from typing import Optional
 import yfinance as yf
 import numpy as np
 
-from src.models import FinancialMetrics
+from src.models import FinancialMetrics, SourceProvenanceAnchor
 
 logger = logging.getLogger(__name__)
+
+
+def build_financial_anchor(
+    ticker: str,
+    fin: FinancialMetrics,
+) -> SourceProvenanceAnchor:
+    """
+    Build a provenance anchor for financial metrics sourced from Yahoo Finance.
+    The URL points at the public yfinance/Yahoo quote page for the ticker so the
+    cited figures are followable to their provider.
+    """
+    snippet_bits = []
+    if fin.market_cap_usd:
+        snippet_bits.append(f"Market cap ${fin.market_cap_usd/1e9:.1f}B")
+    if fin.altman_z_score is not None:
+        snippet_bits.append(f"Altman Z {fin.altman_z_score:.2f}")
+    if fin.debt_to_equity is not None:
+        snippet_bits.append(f"D/E {fin.debt_to_equity:.1f}")
+    snippet = "; ".join(snippet_bits) or "Financial metrics retrieved from provider"
+
+    return SourceProvenanceAnchor(
+        anchor_key=f"[YF-{ticker.upper()}]",
+        source_name="Yahoo Finance (yfinance)",
+        source_url=f"https://finance.yahoo.com/quote/{ticker.upper()}",
+        section_reference="Key Statistics / Balance Sheet",
+        verbatim_snippet=snippet,
+    )
 
 
 def _safe_float(val, default=None) -> Optional[float]:

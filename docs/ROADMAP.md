@@ -58,20 +58,20 @@ outsized scoring impact.
 regional-concentration chart has no blank bucket; geo contributes real differentiation to
 composite scores.
 
-## A3 · Populate `provenance_anchors` (core grounding fix)
+## A3 · Populate `provenance_anchors` at fetch time
 **Files:** `src/data_sources/{yfinance_client,sec_edgar,news_client}.py`,
-`src/agents/footprint_agent.py`, `src/models.py` (confirm `SourceProvenanceAnchor` fields),
-`src/dashboard/html_generator.py` + template.
+`src/agents/footprint_agent.py`, `src/models.py`.
+**Note:** `DriverEvidence` (defined in E1) is the canonical provenance type used here.
+If A3 is implemented before E1, use a forward-compatible placeholder and migrate in the E1 commit.
 **Do:**
-- Every data source, when it returns a value, also returns a `SourceProvenanceAnchor` with:
-  `source_name`, `url` (the actual SEC filing/document URL from EDGAR, the news article URL, or
-  the yfinance provider reference), `retrieved_at` (datetime), and a short `claim` string
-  describing what the anchor supports.
-- In the footprint agent, collect anchors into `fp.provenance_anchors` keyed by field
-  (e.g. `"financials.altman_z"`, `"news.headline_0"`, `"sec.10K"`). Carry them through into
-  node `meta` in the dashboard payload.
-**Acceptance:** `provenance_anchors` is non-empty on every node that had any real data fetch;
-each anchor carries a non-empty, working URL.
+- Each data source returns a `DriverEvidence` alongside its data: `label` (short claim string),
+  `source_url` (actual SEC filing URL, news article URL, or yfinance provider reference),
+  and `retrieved_at`. No separate pass — provenance is captured inline at fetch time.
+- Footprint agent collects into `fp.provenance_anchors` keyed by field
+  (e.g. `"financials.altman_z"`, `"news.headline_0"`, `"sec.10K"`). Carries through to node `meta`.
+- Mock client returns realistic stub anchors so the mock path exercises the full schema.
+**Acceptance:** `provenance_anchors` is non-empty on every node with a real data fetch; each
+anchor has a non-empty URL; mock path produces stub anchors for every node.
 
 ## A4 · Dashboard honesty pass
 **Files:** `src/dashboard/templates/dashboard.html.j2`, `src/dashboard/html_generator.py`.
@@ -214,6 +214,150 @@ demo video and slides.
 
 ---
 
+# P1 (continued) — Dimension grounding & operational completeness
+
+## E1 · Unified `DriverEvidence` model — consolidates A3's `SourceProvenanceAnchor`
+**Files:** `src/models.py`.
+**Context:** A3 introduced `SourceProvenanceAnchor` on `FootprintData` as a general fetch-time
+provenance carrier. E and F need a typed, scorer-level evidence model. Rather than two parallel
+schemas with overlapping fields, **`DriverEvidence` replaces `SourceProvenanceAnchor`** as the
+single provenance primitive used everywhere — at fetch time (footprint agent), at score time
+(scorer dimensions), and at render time (dashboard). Migrate any existing `SourceProvenanceAnchor`
+usages to `DriverEvidence` in the same commit.
+```python
+class DriverEvidence(BaseModel):
+    label: str                    # human-readable driver string rendered in the UI
+    source_url: str               # direct link: SEC filing, GDELT article, yfinance ref
+    retrieved_at: datetime
+    value: Optional[str] = None   # raw value that produced the label
+```
+`DimensionScore` gains `evidence: list[DriverEvidence] = []` alongside the existing `key_drivers`
+list. `key_drivers` is kept for backwards compatibility (plain strings); `evidence` is the
+structured, URL-bearing form consumed by the UI.
+`FootprintData.provenance_anchors` type changes from `dict[str, SourceProvenanceAnchor]` to
+`dict[str, DriverEvidence]` — same dict shape, unified type.
+**Acceptance:** `SourceProvenanceAnchor` is removed; `DriverEvidence` is the only provenance
+type; all existing tests pass; no other files broken by the rename.
+
+## E2 · Compliance grounding — live SEC EDGAR fetch
+**Files:** `src/data_sources/sec_edgar.py`, `src/risk/scorer.py` (`_score_compliance`),
+`src/llm/mock_client.py`, `config/prompts.py`.
+**Spec:**
+- `sec_edgar.py` fetches the entity's most recent filings via the EDGAR full-text search API.
+  For each filing found, capture: form type (10-K, 10-Q, 8-K), filing date, and the direct
+  EDGAR document URL. Return a list of `DriverEvidence` objects populated inline — do not defer
+  provenance to a later pass.
+- **Foreign-entity handling (TSMC, Samsung, ASML, Shin-Etsu, Pegatron, Foxconn, SoftBank,
+  ARM — non-US-listed):** attempt the lookup; on zero results emit exactly one `DriverEvidence`
+  with `label = "No SEC filings — non-US-listed entity"`, `source_url` pointing to the EDGAR
+  search URL that was tried, and `retrieved_at` set. Never leave compliance drivers blank for
+  these entities.
+- `_score_compliance` in `scorer.py` replaces its current hardcoded placeholder logic with
+  deterministic scoring driven by the EDGAR results:
+  - Recent 10-K present → compliance baseline score reduced (good signal)
+  - 8-K filings in last 90 days → flag count drives score upward
+  - No filings found → score set to a defined `NO_FILINGS_DEFAULT` constant, not a magic number
+  - Each branch appends a `DriverEvidence` to the dimension's `evidence` list
+- The LLM compliance narrative (`config/prompts.py`) is rewritten to receive the driver strings
+  and evidence labels as structured input, not an empty context. The model narrates *from* the
+  drivers; it does not invent them.
+- **Mock parity:** `mock_client.py` must return a realistic stub `DriverEvidence` list for
+  compliance — at minimum one 10-K entry for US-listed entities and the `no-US-filings` entry
+  for foreign ones. The mock path must exercise the full schema end-to-end.
+**Acceptance:** `comp_score` varies across entities and is derivable from the evidence list;
+every node has at least one `DriverEvidence` in compliance; foreign nodes carry the explicit
+no-US-filings entry; compliance narrative references the actual filing data.
+
+## E3 · Compliance evidence rendered in inspector UI
+**Files:** `src/dashboard/templates/dashboard.html.j2`, `src/dashboard/html_generator.py`.
+**Do:** In the node inspector panel, render the compliance `evidence` list as clickable source
+links (filing type + date + link to EDGAR document). This is the visible payoff of E2 — a reader
+must be able to click from a compliance score to the filing that drove it.
+**Acceptance:** clicking a compliance-flagged node shows at least one linked filing or an
+explicit "no filings" note; no compliance score is unattributed.
+
+## F1 · Geopolitical grounding — live GDELT fetch + HHI explanation
+**Files:** `src/data_sources/news_client.py` (or a new `src/data_sources/gdelt_client.py` if
+cleaner), `src/risk/scorer.py` (`_score_geopolitical`), `src/llm/mock_client.py`,
+`config/prompts.py`.
+**Spec:**
+- Fetch recent GDELT events for the entity's `hq_country` and industry. For each material event
+  (conflict, trade restriction, sanctions signal), return a `DriverEvidence` with `label`,
+  `source_url` (the GDELT article URL), and `retrieved_at`.
+- `_score_geopolitical` replaces its current score-only output with deterministic driver
+  construction:
+  - The existing `COUNTRY_RISK` index score always emits a `DriverEvidence` explaining the
+    baseline: e.g. `"Taiwan country risk index: 45/100 (elevated geopolitical exposure)"`.
+  - The existing HHI figure (already computed in `cascading_risk.py`) is currently unexplained
+    in the inspector. Pipe it into the geopolitical evidence as a driver:
+    `"Portfolio geo-concentration HHI: 4112 — Taiwan accounts for 55.6% of supply spend"`.
+  - GDELT events append additional `DriverEvidence` entries.
+- The LLM geopolitical narrative receives the driver strings as structured input.
+- **Mock parity:** stub `DriverEvidence` list covering: one country-risk baseline entry, one
+  HHI entry, and one GDELT headline per entity.
+**Acceptance:** `geo_score` is traceable to at least a country-risk baseline driver and an HHI
+contribution for every node; the HHI figure visible in the stat card is now also explained in
+the per-node inspector; geo narrative references actual evidence.
+
+## F2 · Geopolitical evidence rendered in inspector UI
+**Files:** `src/dashboard/templates/dashboard.html.j2`, `src/dashboard/html_generator.py`.
+**Do:** same pattern as E3 — render geo `evidence` as clickable links in the inspector panel.
+The HHI driver in particular should cross-link to the regional-concentration chart in the
+analytics tab, making the stat card and the per-node inspector mutually reinforcing.
+**Acceptance:** every node's geo inspector section shows at least the country-risk baseline and
+HHI contribution as attributed, linked entries.
+
+## G1 · Operational completeness — always emit at least one `ops_driver`
+**Files:** `src/risk/scorer.py` (`_score_operational`).
+**Do:** The current scorer emits an empty `ops_drivers` list when no internal record flags are
+triggered (e.g. Samsung Electronics, which has no spend-concentration flag and no single-source
+flag). A clean bill of health is itself evidence and should be stated:
+- If `internal_record` exists and no flags fired: emit `"No operational flags — vendor meets
+  all monitored thresholds"` as the driver.
+- If `internal_record` is `None`: emit `"No internal vendor record — operational score set to
+  default"` as the driver, making the gap explicit rather than silent.
+- Any existing flag-based drivers (spend concentration, single-source, BCP absent, audit score)
+  are unchanged.
+**Acceptance:** `ops_drivers` is non-empty on every scored node; clean nodes carry an explicit
+positive confirmation driver; nodes without internal records carry an explicit gap driver.
+
+## G2 · Pre-vetted alternatives seed + LLM ranking into `node.meta.backups`
+**Files:** new `data/alternatives_seed.yaml`, `src/agents/risk_agent.py` (or `report_agent.py`
+— whichever currently constructs node meta), `config/prompts.py`, `src/llm/mock_client.py`.
+**Spec:**
+- Create `data/alternatives_seed.yaml` keyed by industry. Must cover all 15 distinct industry
+  values present in the current graph — **every industry must have an entry or some nodes stay
+  empty**:
+  ```
+  Semiconductor Fabrication: [Samsung Foundry, GlobalFoundries, Intel Foundry, SMIC]
+  Contract Electronics Manufacturing: [Pegatron, Wistron, Compal, Flex Ltd]
+  Contract Manufacturing: [Pegatron, Wistron, Compal, Flex Ltd]
+  Memory & Display: [Micron, SK Hynix, Kioxia, Japan Display]
+  Wireless Chips: [Qualcomm, MediaTek, Marvell, Intel]
+  Lithography Equipment: [Nikon, Canon, Ultratech]
+  Semiconductor Equipment: [Lam Research, KLA Corporation, Tokyo Electron]
+  Silicon Wafers: [Sumco, Siltronic, SK Siltron, GlobalWafers]
+  Specialty Glass: [AGC Inc, Nippon Electric Glass, Schott]
+  IP Licensing: [MIPS Technologies, Imagination Technologies, Tensilica]
+  Telecommunications: [Verizon, T-Mobile, Deutsche Telekom, Vodafone]
+  E-Commerce / Cloud: [Microsoft Azure, Google Cloud, Alibaba Cloud]
+  Search & Advertising: [Microsoft Bing Ads, Meta Audience Network]
+  Investment / Telecommunications: [SoftBank Vision Fund alternatives: KKR, Sequoia]
+  Industrial Gases: [Air Liquide, Messer Group, Air Products]
+  ```
+  These are starting candidates — Claude Code may revise/extend but must not leave any industry
+  unkeyed.
+- In the pipeline (risk or report agent), after scoring: for each node, load candidates from the
+  seed by `entity.industry`, pass them plus the entity's risk drivers to the LLM with a prompt
+  that asks it to rank the candidates and justify each in 1 sentence given the specific risk
+  context. Store the ranked, justified list into `node.meta.backups`.
+- **Mock parity:** mock client returns a realistic stub ranked list for any alternatives prompt.
+**Acceptance:** `node.meta.backups` is non-empty on every node that has a seed entry for its
+industry; each backup carries a name and a 1-sentence justification; the inspector's
+alternatives section is no longer blank.
+
+---
+
 ## Out of scope (do not start without explicit re-scoping)
 
 - **Live footprint refresh via a backend.** True on-demand re-fetch and recompute requires a
@@ -229,12 +373,18 @@ demo video and slides.
 
 ## Session sequence
 
-1. **Session 1 — Foundation (A1 done ✅):** Continue with A2. Get the geo dimension live and
-   country normalization clean before anything else touches scores.
-2. **Session 2 — Grounding:** A3 → C2. Provenance recorded at fetch time and rendered in the UI.
-3. **Session 3 — Honesty + math:** A4 → B1 → B3. Remove theater, fix VaR, fix aggregation.
-4. **Session 4 — Explainability + exposure:** C1 → B4 → C5 → B2. Dimension breakdown, impact
-   matrix, freshness panel, spend-sized nodes.
-5. **Session 5 — Stretch:** A5 → C3 → C4 → D1 → D2 as time allows.
+1. **Session 1 — Foundation (A1 done ✅):** A2 → A3 → A4. Country normalization, provenance
+   anchors, dashboard honesty pass. Single HTML output at the end.
+2. **Session 2 — Math + exposure:** B1 → B3 → B4 → B2. Risk-scaled VaR, portfolio aggregation,
+   impact×probability matrix, spend-sized nodes. Single HTML output at the end.
+3. **Session 3 — Compliance grounding:** E1 → E2 → E3. `DriverEvidence` model, SEC EDGAR
+   fetch, compliance rendered in inspector. Single HTML output at the end.
+4. **Session 4 — Geo grounding + ops completeness:** F1 → F2 → G1 → G2. GDELT fetch, geo
+   evidence in inspector, ops driver completeness, pre-vetted alternatives seeded and ranked.
+   Single HTML output at the end.
+5. **Session 5 — Explainability UI + polish:** C1 → C2 → C5. Full dimension breakdown in
+   inspector, all provenance links rendered, freshness panel.
+6. **Session 6 — Stretch:** A5 → C3 → C4 → D1 → D2 as time allows.
 
-If time is short: **P0 (A2–A4) + B1 + D1** alone move the two largest quality levers.
+If time is short: **A2–A4 + B1 + E1–E2 + G1** deliver grounded, differentiated scores across
+all four dimensions with visible evidence — the highest-leverage subset.

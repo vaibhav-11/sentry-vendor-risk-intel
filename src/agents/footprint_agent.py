@@ -32,6 +32,7 @@ async def footprint_node(state: dict[str, Any]) -> dict[str, Any]:
             newsapi_key=settings.news_api_key,
             sec_user_agent=settings.sec_user_agent,
             concurrency=5,
+            llm_backend=ps.llm_backend,
         )
         ps.footprint_data = footprints
     except Exception as e:

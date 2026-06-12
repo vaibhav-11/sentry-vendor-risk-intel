@@ -14,6 +14,12 @@ Working through docs/REMEDIATION_PLAN.md one task at a time. CLAUDE.md + the pla
 - Result: 16/16 entities now have REAL financials (was 1/8). Tickers 100%, correct primary symbols.
 - Side effect to address later: with real financials these healthy mega-caps all score Low → 0 alerts. Scoring calibration / VaR (B1) / tier-2 expansion (A5) will restore meaningful risk signal.
 
-**NEXT: A2** — normalize hq_country to ISO-2 everywhere (revive geo for the LLM path; geo already works for ISO-2 mock data) + set target's country (Apple = US) to kill the blank HHI bucket.
+**A2 — DONE (2026-06-13).** `normalize_country()` in scorer.py + applied in watchlist_agent; target set to US. Geo dimension live and varies by country. See [[country-normalization]].
 
-See [[known-issues-and-gaps]] and [[project-overview]].
+**A3 — DONE (2026-06-13).** `provenance_anchors` populated by each data source (`build_*_anchor` helpers) and collected in the aggregator via `_collect_provenance`; threads `llm_backend` so mock mode returns stub data+anchors. Flows into node meta + rendered as clickable cited sources in the inspector. See [[mock-footprint-path]].
+
+**A4 — DONE (2026-06-13).** Dashboard honesty pass: removed fake 4-step refresh animation → static data-freshness panel (per-source `retrieved_at` + per-node composite deltas cached to `data/cache/<company>_last_run.json`, "Baseline" on first run); Data Room relabeled ILLUSTRATIVE with RAG badges removed and placeholder docs mapped to real node IDs; playbooks generated from highest-composite + single-source entities. Removed `uploaded_documents` field from PipelineState.
+
+**NEXT: P1 — B1** (risk-scaled VaR) → B3 (portfolio aggregation) per session sequence, or C2 (provenance already half-rendered in inspector).
+
+See [[known-issues-and-gaps]], [[project-overview]], [[country-normalization]], [[mock-footprint-path]].

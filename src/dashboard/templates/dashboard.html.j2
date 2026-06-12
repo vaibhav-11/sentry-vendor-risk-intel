@@ -14,17 +14,19 @@
 </head>
 <body class="p-6">
 
-    <div id="refresh-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center">
-        <div class="bg-slate-900 border border-slate-700 p-6 rounded-xl max-w-md w-full shadow-2xl">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
-                <h3 class="font-bold text-white text-md">Agentic Fan-Out Pipeline Running</h3>
+    <div id="freshness-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-xl max-w-lg w-full shadow-2xl max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4 border-b border-slate-700 pb-3">
+                <h3 class="font-bold text-white text-md">🕒 Data Freshness & Change Log</h3>
+                <button onclick="document.getElementById('freshness-modal').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg leading-none">×</button>
             </div>
-            <div id="refresh-status-steps" class="space-y-2 text-xs font-mono text-slate-400">
-                <p id="step-1" class="text-slate-500">⏳ [1/4] Watchlist Agent mapping deep structural graph vectors...</p>
-                <p id="step-2" class="text-slate-500">⏳ [2/4] Footprint Agent connecting SEC EDGAR & yfinance endpoints...</p>
-                <p id="step-3" class="text-slate-500">⏳ [3/4] Multi-Dimensional Risk scoring Engine re-computing matrices...</p>
-                <p id="step-4" class="text-slate-500">⏳ [4/4] Generating finalized Executive report summary profiles...</p>
+            <div class="mb-5">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Source Retrieval Timestamps</h4>
+                <div id="freshness-sources" class="space-y-1.5 text-xs"></div>
+            </div>
+            <div>
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Change Since Last Cached Run</h4>
+                <div id="freshness-deltas" class="space-y-1.5 text-xs"></div>
             </div>
         </div>
     </div>
@@ -32,11 +34,11 @@
     <div class="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-white">🛡️ Sentry Vendor Risk Intelligence Studio</h1>
-            <p class="text-xs text-slate-400">Target Ecosystem: <span class="font-semibold text-blue-400">{{ target_company }}</span> | Run: {{ run_id }} | Refreshed: <span id="generation-timestamp">{{ generated_at }}</span></p>
+            <p class="text-xs text-slate-400">Target Ecosystem: <span class="font-semibold text-blue-400">{{ target_company }}</span> | Run: {{ run_id }} | Generated: <span id="generation-timestamp">{{ generated_at }}</span></p>
         </div>
         <div>
-            <button onclick="triggerPipelineRefresh()" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white rounded-lg shadow transition flex items-center gap-2">
-                🔄 Trigger Footprint Refresh
+            <button onclick="openFreshnessPanel()" class="px-4 py-2 bg-slate-800 border border-slate-600 hover:border-blue-500 text-xs font-bold text-slate-200 rounded-lg shadow transition flex items-center gap-2">
+                🕒 Data Freshness & Changes
             </button>
         </div>
     </div>
@@ -139,16 +141,16 @@
             <div class="flex items-start gap-4 border-b border-slate-700 pb-4 mb-4">
                 <div class="p-3 bg-blue-900/30 rounded-lg border border-blue-500/30 text-xl">🏢</div>
                 <div>
-                    <h2 class="text-md font-bold text-white">Document Processing Repository</h2>
-                    <p class="text-xs text-slate-400 mt-0.5">Manage and organize ingested statements of work, master service agreements, and vendor transaction records.</p>
+                    <h2 class="text-md font-bold text-white">Document Data Room <span class="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-900 align-middle">ILLUSTRATIVE — DOCUMENT INGESTION ROADMAP</span></h2>
+                    <p class="text-xs text-slate-400 mt-1">This tab illustrates the planned contract-ingestion workflow. Document upload and RAG vectorization are <strong>not yet implemented</strong>; the entries below are placeholders linked to real graph nodes from this run to show the intended mapping.</p>
                 </div>
             </div>
-            <div class="border-2 border-dashed border-slate-600 hover:border-blue-500 rounded-xl p-8 text-center bg-slate-900/50 transition mb-6 cursor-pointer" onclick="alert('File browser invocation triggered.')">
+            <div class="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center bg-slate-900/50 mb-6 opacity-60">
                 <span class="text-2xl">📥</span>
-                <h4 class="text-sm font-semibold text-slate-200 mt-2">Upload Enterprise Supply Chain Documents</h4>
-                <p class="text-xs text-slate-500 mt-1">Supported file formats: PDF, CSV, XLSX, DOCX. Uploaded documents are automatically mapped to network graph nodes.</p>
+                <h4 class="text-sm font-semibold text-slate-300 mt-2">Upload Enterprise Supply Chain Documents</h4>
+                <p class="text-xs text-slate-500 mt-1">Planned: PDF, CSV, XLSX, DOCX ingestion mapped to network graph nodes. (Not active in this build.)</p>
             </div>
-            <h3 class="text-xs font-bold uppercase tracking-wider text-blue-400 mb-3">Linked Vector Embeddings</h3>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Placeholder Documents (mapped to live nodes)</h3>
             <div class="space-y-2" id="dataroom-list"></div>
         </div>
     </div>
@@ -268,7 +270,9 @@
         let VIS_EDGES_ARRAY = {{ vis_edges_json }};
         let RISK_TABLE_DATA = {{ risk_table_json }};
         const GEOPOLITICAL_WEIGHTS = {{ chart_data_json }};
-        const VAULT_DOCUMENTS = {{ uploaded_docs_json }};
+        const DATAROOM_DOCS = {{ dataroom_docs_json }};
+        const PLAYBOOK_DATA = {{ playbooks_json }};
+        const FRESHNESS_DATA = {{ freshness_json }};
 
         let networkInstance = null;
         let nodesDataSet = new vis.DataSet();
@@ -341,14 +345,26 @@
             const content = document.getElementById('inspector-content');
             content.classList.remove('hidden');
 
-            let backupsList = (node.meta.backups && node.meta.backups.length > 0) 
-                ? node.meta.backups.map(b => `<li class="bg-slate-900 px-2 py-1 border border-slate-700 rounded text-slate-300 text-[11px] font-mono">⚡ ${b}</li>`).join('')
-                : `<li class="text-slate-500 italic">No alternative vendors registered</li>`;
+            const anchors = node.meta.provenance_anchors || {};
+            const anchorEntries = Object.entries(anchors);
+            let sourcesList = anchorEntries.length > 0
+                ? anchorEntries.map(([key, a]) => {
+                    const label = `${a.source_name}${a.section_reference ? ' · ' + a.section_reference : ''}`;
+                    const link = a.source_url
+                        ? `<a href="${a.source_url}" target="_blank" rel="noopener" class="text-blue-400 hover:underline break-all">${label} ↗</a>`
+                        : `<span class="text-slate-400">${label}</span>`;
+                    return `<li class="bg-slate-900 px-2 py-1 border border-slate-700 rounded text-[11px]">
+                        <div class="font-mono text-slate-500 text-[9px] uppercase">${key}</div>
+                        ${link}
+                        ${a.verbatim_snippet ? `<div class="text-slate-400 italic mt-0.5">"${a.verbatim_snippet}"</div>` : ''}
+                    </li>`;
+                }).join('')
+                : `<li class="text-slate-500 italic">No source data fetched for this entity.</li>`;
 
             content.innerHTML = `
                 <div class="border-b border-slate-700 pb-2">
                     <h4 class="text-md font-bold text-blue-400">${node.meta.name}</h4>
-                    <p class="text-[10px] text-slate-400 uppercase font-mono">${node.meta.type} | Sector: ${node.meta.industry}</p>
+                    <p class="text-[10px] text-slate-400 uppercase font-mono">${node.meta.type} | Sector: ${node.meta.industry} | ${node.meta.country}</p>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-xs">
                     <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
@@ -360,9 +376,15 @@
                         <strong class="text-sm font-bold text-red-400">$${node.meta.value_at_risk.toLocaleString()}</strong>
                     </div>
                 </div>
+                <div class="grid grid-cols-4 gap-1 text-[10px] text-center">
+                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">FIN</span><strong class="text-slate-200">${node.meta.fin_score}</strong></div>
+                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">OPS</span><strong class="text-slate-200">${node.meta.ops_score}</strong></div>
+                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">COMP</span><strong class="text-slate-200">${node.meta.comp_score}</strong></div>
+                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">GEO</span><strong class="text-slate-200">${node.meta.geo_score}</strong></div>
+                </div>
                 <div>
-                    <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Pre-Vetted Contingency Options:</span>
-                    <ul class="space-y-1">${backupsList}</ul>
+                    <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Cited Sources (provenance):</span>
+                    <ul class="space-y-1">${sourcesList}</ul>
                 </div>
             `;
         }
@@ -420,31 +442,44 @@
             document.getElementById('dropdown-' + id).classList.toggle('hidden');
         }
 
-        // ── REFRESH ENGINE SIMULATOR RUNNER ──
-        function triggerPipelineRefresh() {
-            const modal = document.getElementById('refresh-modal');
-            modal.classList.remove('hidden');
+        // ── DATA FRESHNESS & CHANGE PANEL (static, real provenance timestamps) ──
+        function renderFreshnessPanel() {
+            const srcEl = document.getElementById('freshness-sources');
+            if (FRESHNESS_DATA.sources && FRESHNESS_DATA.sources.length > 0) {
+                srcEl.innerHTML = FRESHNESS_DATA.sources.map(s => `
+                    <div class="flex justify-between items-center bg-slate-800 px-3 py-2 rounded border border-slate-700">
+                        <span class="text-slate-200 font-medium">${s.source}</span>
+                        <span class="text-slate-400 font-mono text-[11px]">${s.retrieved_at} <span class="text-slate-500">(${s.age})</span></span>
+                    </div>
+                `).join('');
+            } else {
+                srcEl.innerHTML = `<p class="text-slate-500 italic">No source retrieval timestamps recorded for this run.</p>`;
+            }
 
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-            steps.forEach((step, idx) => {
-                setTimeout(() => {
-                    const el = document.getElementById(step);
-                    el.classList.remove('text-slate-500');
-                    el.classList.add('text-blue-400', 'font-bold');
-                    el.textContent = el.textContent.replace('⏳', '✅');
-                    if (idx > 0) {
-                        const prev = document.getElementById(steps[idx-1]);
-                        prev.classList.remove('text-blue-400');
-                        prev.classList.add('text-slate-400');
+            const deltaEl = document.getElementById('freshness-deltas');
+            if (FRESHNESS_DATA.baseline) {
+                deltaEl.innerHTML = `<p class="text-slate-400 italic">Baseline — no prior run cached. Future runs will show per-node composite movement here.</p>`;
+            } else if (FRESHNESS_DATA.deltas && FRESHNESS_DATA.deltas.length > 0) {
+                deltaEl.innerHTML = FRESHNESS_DATA.deltas.map(d => {
+                    if (d.new) {
+                        return `<div class="flex justify-between items-center bg-slate-800 px-3 py-2 rounded border border-slate-700">
+                            <span class="text-slate-200">${d.name}</span>
+                            <span class="text-blue-400 font-mono text-[11px]">NEW · ${d.current}</span></div>`;
                     }
-                }, (idx + 1) * 1100);
-            });
+                    const up = d.delta > 0;
+                    const arrow = up ? '▲' : '▼';
+                    const colour = up ? 'text-red-400' : 'text-emerald-400';
+                    return `<div class="flex justify-between items-center bg-slate-800 px-3 py-2 rounded border border-slate-700">
+                        <span class="text-slate-200">${d.name}</span>
+                        <span class="${colour} font-mono text-[11px]">${arrow} ${Math.abs(d.delta)} → ${d.current}</span></div>`;
+                }).join('');
+            } else {
+                deltaEl.innerHTML = `<p class="text-slate-400 italic">No composite score changes since the last cached run.</p>`;
+            }
+        }
 
-            setTimeout(() => {
-                modal.classList.add('hidden');
-                document.getElementById('generation-timestamp').textContent = new Date().toUTCString().replace('GMT', 'UTC');
-                alert("Agentic background assessment fan-out complete!");
-            }, 5200);
+        function openFreshnessPanel() {
+            document.getElementById('freshness-modal').classList.remove('hidden');
         }
 
         // ── COMPREHENSIVE NODE MANIPULATION REGISTRY (ADD & INLINE EDIT CONSOLE) ──
@@ -574,13 +609,13 @@
             document.getElementById('add-node-form').reset();
         }
 
-        const COMPILATION_SCHEDULER = [
-            { id: 1, title: "Mitigate Single-Source Value-at-Risk Vector", subject: "Strategic Sourcing Evaluation & Continuity Protocol Request", body: "Dear Sourcing Operations Team,\n\nOur system has identified a single-source configuration tracking above normal threshold metrics.\n\nTo ensure supply chain stabilization, please deliver your regional continuity matrix or asset isolation blueprint plans within 5 business days.\n\nBest Regards,\nStrategic Procurement and Risk Operations Center" },
-            { id: 2, title: "Resolve Open Compliance Validation Gap", subject: "Mandatory Corporate Governance Certification Update Notice", body: "Dear Business Partner,\n\nOur automated verification pipeline has identified an outstanding documentation refresh requirement linked to your governance file.\n\nPlease upload your updated entity compliance certificates directly to our workspace vault portal immediately to ensure uninterrupted transactions.\n\nBest Regards,\nCorporate Sourcing Governance & Audit Review Board" }
-        ];
-
         function renderPlaybooks() {
-            document.getElementById('playbook-trigger-list').innerHTML = COMPILATION_SCHEDULER.map(p => `
+            const list = document.getElementById('playbook-trigger-list');
+            if (!PLAYBOOK_DATA || PLAYBOOK_DATA.length === 0) {
+                list.innerHTML = `<p class="text-xs text-slate-500 italic">No high-risk entities flagged in this run.</p>`;
+                return;
+            }
+            list.innerHTML = PLAYBOOK_DATA.map(p => `
                 <button onclick="activatePlaybook(${p.id})" class="w-full text-left p-3 bg-slate-900 text-xs font-semibold rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-900/80 transition block text-slate-300">
                     ⚡ ${p.title}
                 </button>
@@ -588,7 +623,8 @@
         }
 
         function activatePlaybook(id) {
-            const playbook = COMPILATION_SCHEDULER.find(p => p.id === id);
+            const playbook = PLAYBOOK_DATA.find(p => p.id === id);
+            if (!playbook) return;
             document.getElementById('comm-subject').textContent = playbook.subject;
             document.getElementById('comm-body').value = playbook.body;
         }
@@ -599,18 +635,23 @@
         }
 
         function renderDataRoom() {
-            document.getElementById('dataroom-list').innerHTML = VAULT_DOCUMENTS.map(d => `
+            const el = document.getElementById('dataroom-list');
+            if (!DATAROOM_DOCS || DATAROOM_DOCS.length === 0) {
+                el.innerHTML = `<p class="text-xs text-slate-500 italic">No graph nodes available to illustrate document mapping.</p>`;
+                return;
+            }
+            el.innerHTML = DATAROOM_DOCS.map(d => `
                 <div class="flex justify-between items-center bg-slate-900 p-3 rounded-lg border border-slate-800 text-xs">
                     <div class="flex items-center gap-3">
                         <span class="text-lg">📄</span>
                         <div>
-                            <p class="font-bold text-slate-200">${d.name} <span class="font-mono text-[10px] text-slate-500">(${d.size})</span></p>
+                            <p class="font-bold text-slate-200">${d.name}</p>
                             <p class="text-[10px] text-slate-400 mt-0.5">Classification Type: <strong>${d.type}</strong></p>
                         </div>
                     </div>
                     <div class="text-right">
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950 text-blue-400 border border-blue-900">Vectorized & Active via RAG</span>
-                        <p class="text-[9px] text-slate-500 mt-1">Associated Nodes: ${d.linked_nodes.join(', ')}</p>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">Placeholder — not ingested</span>
+                        <p class="text-[9px] text-slate-500 mt-1">Mapped to node: <span class="font-mono">${d.linked_node}</span> (${d.linked_name})</p>
                     </div>
                 </div>
             `).join('');
@@ -622,6 +663,7 @@
             renderPlaybooks();
             renderDataRoom();
             renderNodeDirectory();
+            renderFreshnessPanel();
         };
     </script>
 </body>

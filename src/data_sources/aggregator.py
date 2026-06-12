@@ -7,12 +7,15 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from src.models import Entity, FootprintData, InternalVendorRecord
-from src.data_sources.yfinance_client import fetch_financial_metrics
-from src.data_sources.news_client import fetch_news
-from src.data_sources.sec_edgar import fetch_recent_filings
+from src.models import (
+    Entity, FootprintData, InternalVendorRecord, SourceProvenanceAnchor,
+    FinancialMetrics, NewsItem, SECFiling,
+)
+from src.data_sources.yfinance_client import fetch_financial_metrics, build_financial_anchor
+from src.data_sources.news_client import fetch_news, build_news_anchor
+from src.data_sources.sec_edgar import fetch_recent_filings, build_filing_anchor
 from src.data_sources.wikipedia_client import fetch_company_description
 from config.settings import settings
 
@@ -50,17 +53,167 @@ def get_internal_record(entity_name: str) -> InternalVendorRecord | None:
     return registry.get(entity_name.lower())
 
 
+# ── Provenance collection ─────────────────────────────────────────────────────
+
+def _collect_provenance(
+    entity: Entity,
+    financials: FinancialMetrics | None,
+    news_items: list[NewsItem],
+    filings: list[SECFiling],
+) -> dict[str, SourceProvenanceAnchor]:
+    """
+    Build the provenance anchor map for whatever real data was actually fetched.
+    Keyed by field path (e.g. "financials.altman_z", "sec.10-K", "news.headline_0")
+    so the dashboard can attach each anchor to the figure it supports.
+    """
+    anchors: dict[str, SourceProvenanceAnchor] = {}
+
+    # Financials — anchor only when we have a ticker and at least one real metric.
+    if financials is not None and entity.ticker and (financials.data_quality or 0) > 0.2:
+        anchor = build_financial_anchor(entity.ticker, financials)
+        anchors["financials"] = anchor
+        if financials.altman_z_score is not None:
+            anchors["financials.altman_z"] = anchor
+
+    # SEC filings — one anchor per filing, keyed by form type.
+    for filing in filings:
+        key = f"sec.{filing.form_type}"
+        if key not in anchors:   # keep the most recent (first) of each form type
+            anchors[key] = build_filing_anchor(filing)
+
+    # News — anchor the first few risk-relevant (or otherwise top) headlines.
+    cited = [n for n in news_items if n.risk_relevant] or news_items
+    for i, item in enumerate(cited[:3]):
+        if item.url:   # only cite a headline we can actually link to
+            anchors[f"news.headline_{i}"] = build_news_anchor(item, i)
+
+    return anchors
+
+
+# ── Mock footprint (offline, no network) ──────────────────────────────────────
+
+# Deterministic per-ticker financial stubs so the mock path produces varied,
+# realistic scores and provenance without any network call. Values are
+# illustrative but plausible for the worked Apple supply-chain example.
+_MOCK_FINANCIALS: dict[str, dict] = {
+    "TSM":   {"market_cap_usd": 9.0e11, "revenue_ttm_usd": 8.0e10, "debt_to_equity": 28.0,  "current_ratio": 2.4, "altman_z_score": 6.1,  "revenue_growth_yoy_pct": 9.0},
+    "HNHPF": {"market_cap_usd": 5.5e10, "revenue_ttm_usd": 2.1e11, "debt_to_equity": 65.0,  "current_ratio": 1.4, "altman_z_score": 3.2,  "revenue_growth_yoy_pct": -3.0},
+    "SSNLF": {"market_cap_usd": 3.7e11, "revenue_ttm_usd": 2.0e11, "debt_to_equity": 12.0,  "current_ratio": 2.1, "altman_z_score": 4.8,  "revenue_growth_yoy_pct": 4.0},
+    "AVGO":  {"market_cap_usd": 6.0e11, "revenue_ttm_usd": 4.6e10, "debt_to_equity": 110.0, "current_ratio": 1.0, "altman_z_score": 2.6,  "revenue_growth_yoy_pct": 12.0},
+    "GLW":   {"market_cap_usd": 3.0e10, "revenue_ttm_usd": 1.3e10, "debt_to_equity": 78.0,  "current_ratio": 1.5, "altman_z_score": 2.9,  "revenue_growth_yoy_pct": 1.0},
+    "T":     {"market_cap_usd": 1.3e11, "revenue_ttm_usd": 1.2e11, "debt_to_equity": 130.0, "current_ratio": 0.7, "altman_z_score": 1.6,  "revenue_growth_yoy_pct": -1.0},
+    "AMZN":  {"market_cap_usd": 1.9e12, "revenue_ttm_usd": 5.7e11, "debt_to_equity": 55.0,  "current_ratio": 1.1, "altman_z_score": 4.0,  "revenue_growth_yoy_pct": 11.0},
+    "GOOGL": {"market_cap_usd": 2.1e12, "revenue_ttm_usd": 3.1e11, "debt_to_equity": 9.0,   "current_ratio": 2.0, "altman_z_score": 8.5,  "revenue_growth_yoy_pct": 13.0},
+    "ARM":   {"market_cap_usd": 1.4e11, "revenue_ttm_usd": 3.2e9,  "debt_to_equity": 5.0,   "current_ratio": 4.5, "altman_z_score": 9.2,  "revenue_growth_yoy_pct": 20.0},
+    "ASML":  {"market_cap_usd": 3.5e11, "revenue_ttm_usd": 2.8e10, "debt_to_equity": 30.0,  "current_ratio": 1.6, "altman_z_score": 7.0,  "revenue_growth_yoy_pct": 6.0},
+    "AMAT":  {"market_cap_usd": 1.5e11, "revenue_ttm_usd": 2.7e10, "debt_to_equity": 35.0,  "current_ratio": 2.3, "altman_z_score": 6.4,  "revenue_growth_yoy_pct": 3.0},
+    "SHECY": {"market_cap_usd": 7.0e10, "revenue_ttm_usd": 1.5e10, "debt_to_equity": 8.0,   "current_ratio": 3.0, "altman_z_score": 5.5,  "revenue_growth_yoy_pct": 2.0},
+    "SFTBY": {"market_cap_usd": 9.0e10, "revenue_ttm_usd": 4.2e10, "debt_to_equity": 180.0, "current_ratio": 1.2, "altman_z_score": 1.4,  "revenue_growth_yoy_pct": -8.0},
+    "APD":   {"market_cap_usd": 6.0e10, "revenue_ttm_usd": 1.2e10, "debt_to_equity": 70.0,  "current_ratio": 1.8, "altman_z_score": 3.4,  "revenue_growth_yoy_pct": 0.0},
+    "LIN":   {"market_cap_usd": 2.1e11, "revenue_ttm_usd": 3.3e10, "debt_to_equity": 60.0,  "current_ratio": 0.9, "altman_z_score": 3.1,  "revenue_growth_yoy_pct": 2.0},
+}
+
+
+def _build_mock_footprint(entity: Entity) -> FootprintData:
+    """
+    Build a fully-populated FootprintData for an entity without any network
+    access. Produces realistic financials, a stub 10-K filing, a stub news
+    headline, and the matching provenance anchors so the mock path exercises
+    the entire grounding schema end to end.
+    """
+    ticker = entity.ticker
+    financials: FinancialMetrics | None = None
+    filings: list[SECFiling] = []
+    news_items: list[NewsItem] = []
+
+    if ticker and ticker.upper() in _MOCK_FINANCIALS:
+        data = _MOCK_FINANCIALS[ticker.upper()]
+        financials = FinancialMetrics(
+            entity_id=entity.id,
+            fetch_date=datetime.utcnow(),
+            data_quality=0.9,
+            **data,
+        )
+        # A risk-flagged 10-K for distressed names; a clean one otherwise.
+        z = data.get("altman_z_score", 5.0)
+        flags = ["going concern"] if z < 1.81 else (["impairment"] if z < 3.0 else [])
+        filings.append(SECFiling(
+            entity_id=entity.id,
+            form_type="10-K",
+            filed_at=datetime.utcnow(),
+            accession_number="0000000000-24-000000",
+            description="10-K annual report (mock)",
+            risk_flags=flags,
+            url=f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company={entity.name.replace(' ', '+')}&type=10-K",
+        ))
+
+    # A single representative headline per entity (sentiment follows financial health).
+    if ticker:
+        z = _MOCK_FINANCIALS.get(ticker.upper(), {}).get("altman_z_score", 5.0)
+        if z < 1.81:
+            title = f"{entity.name} faces liquidity pressure as covenant concerns mount"
+            risk = True
+        elif z < 3.0:
+            title = f"{entity.name} warns of margin headwinds amid supply constraints"
+            risk = True
+        else:
+            title = f"{entity.name} reports steady demand across core product lines"
+            risk = False
+        news_items.append(NewsItem(
+            entity_id=entity.id,
+            title=title,
+            source="Reuters",
+            published_at=datetime.utcnow() - timedelta(days=2),
+            url=f"https://www.reuters.com/search/news?blob={entity.name.replace(' ', '+')}",
+            sentiment_score=-0.4 if risk else 0.3,
+            risk_relevant=risk,
+            summary="",
+        ))
+
+    internal_record = get_internal_record(entity.name)
+    anchors = _collect_provenance(entity, financials, news_items, filings)
+
+    news_sentiments = [n.sentiment_score for n in news_items]
+    avg_sentiment   = sum(news_sentiments) / len(news_sentiments) if news_sentiments else 0.0
+    neg_count       = sum(1 for s in news_sentiments if s < -0.1)
+    risk_headlines  = [n.title for n in news_items if n.risk_relevant][:5]
+
+    return FootprintData(
+        entity_id=entity.id,
+        entity_name=entity.name,
+        fetch_date=datetime.utcnow(),
+        financials=financials,
+        news_items=news_items,
+        sec_filings=filings,
+        internal_record=internal_record,
+        description=entity.description,
+        news_sentiment_avg=round(avg_sentiment, 3),
+        negative_news_count=neg_count,
+        risk_news_headlines=risk_headlines,
+        provenance_anchors=anchors,
+    )
+
+
 # ── Main aggregation function ─────────────────────────────────────────────────
 
 async def aggregate_entity_footprint(
     entity: Entity,
     newsapi_key: str = "",
     sec_user_agent: str = "VendorRiskIntel/1.0 dev@example.com",
+    llm_backend: str = "mock",
 ) -> FootprintData:
     """
     Fetch all available data for a single entity concurrently.
     Returns a populated FootprintData object.
+
+    In mock mode we skip the network entirely and return deterministic stub data
+    plus provenance anchors, so the offline demo exercises the full grounding
+    schema without depending on live yfinance/SEC/GDELT availability.
     """
+    if llm_backend == "mock":
+        logger.info(f"Aggregating MOCK footprint for: {entity.name}")
+        return _build_mock_footprint(entity)
+
     logger.info(f"Aggregating footprint for: {entity.name}")
 
     # Fan out all fetches concurrently
@@ -99,6 +252,9 @@ async def aggregate_entity_footprint(
     neg_count       = sum(1 for s in news_sentiments if s < -0.1)
     risk_headlines  = [n.title for n in news_items if n.risk_relevant][:5]
 
+    # Record provenance for whatever real data we actually fetched.
+    anchors = _collect_provenance(entity, financials, news_items or [], filings or [])
+
     return FootprintData(
         entity_id=entity.id,
         entity_name=entity.name,
@@ -111,6 +267,7 @@ async def aggregate_entity_footprint(
         news_sentiment_avg=round(avg_sentiment, 3),
         negative_news_count=neg_count,
         risk_news_headlines=risk_headlines,
+        provenance_anchors=anchors,
     )
 
 
@@ -119,6 +276,7 @@ async def aggregate_all_entities(
     newsapi_key: str = "",
     sec_user_agent: str = "",
     concurrency: int = 5,
+    llm_backend: str = "mock",
 ) -> dict[str, FootprintData]:
     """
     Aggregate footprints for all entities with bounded concurrency.
@@ -128,7 +286,9 @@ async def aggregate_all_entities(
 
     async def bounded_fetch(entity: Entity) -> tuple[str, FootprintData]:
         async with semaphore:
-            fp = await aggregate_entity_footprint(entity, newsapi_key, sec_user_agent)
+            fp = await aggregate_entity_footprint(
+                entity, newsapi_key, sec_user_agent, llm_backend=llm_backend
+            )
             return entity.id, fp
 
     tasks = [bounded_fetch(e) for e in entities]

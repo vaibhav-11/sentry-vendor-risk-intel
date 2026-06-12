@@ -10,9 +10,30 @@ from typing import Optional
 
 import httpx
 
-from src.models import SECFiling
+from src.models import SECFiling, SourceProvenanceAnchor
 
 logger = logging.getLogger(__name__)
+
+
+def build_filing_anchor(filing: SECFiling) -> SourceProvenanceAnchor:
+    """
+    Build a provenance anchor for a single SEC filing. The URL is the EDGAR
+    full-text-search link already resolved on the SECFiling object.
+    """
+    if filing.risk_flags:
+        snippet = f"Risk flags detected: {', '.join(filing.risk_flags)}"
+        section = "Item 1A. Risk Factors"
+    else:
+        snippet = f"{filing.form_type} filed {filing.filed_at.strftime('%Y-%m-%d')}"
+        section = f"{filing.form_type} cover"
+
+    return SourceProvenanceAnchor(
+        anchor_key=f"[SEC-{filing.form_type}-{filing.filed_at.year}]",
+        source_name="SEC EDGAR",
+        source_url=filing.url or "https://www.sec.gov/cgi-bin/browse-edgar",
+        section_reference=section,
+        verbatim_snippet=snippet,
+    )
 
 EDGAR_SEARCH_URL = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_SUBMISSIONS_URL = "https://data.sec.gov/submissions"

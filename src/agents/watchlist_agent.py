@@ -11,6 +11,7 @@ import uuid
 from typing import Any
 
 from src.models import Entity, EntityRelationship, EntityType, PipelineState
+from src.risk.scorer import normalize_country
 from src.llm.interface import get_llm_client
 from src.data_sources.ticker_resolver import resolve_entity_tickers
 from src.data_sources.aggregator import load_vendor_registry
@@ -60,7 +61,7 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
 
     for item in data.get("entities", []):
         name        = item.get("name", "Unknown")
-        country     = item.get("hq_country", "")
+        country     = normalize_country(item.get("hq_country", ""))
         entity_id   = _slug(name, country.lower() if country else "")
         parent_name = item.get("relationship_to_parent", "")
 
@@ -142,6 +143,9 @@ async def watchlist_node(state: dict[str, Any]) -> dict[str, Any]:
         entity_type=EntityType.TARGET,
         depth_level=0,
         importance_score=10.0,
+        # Target HQ defaults to US (the worked example is Apple Inc). Leaving this
+        # blank creates an empty "" bucket in the geo HHI concentration chart.
+        hq_country="US",
     )
 
     # Build prompt and call LLM

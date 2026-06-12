@@ -31,6 +31,77 @@ DEFAULT_COUNTRY_RISK = 40.0  # Unknown country
 # ── OFAC / Sanctions watchlist (illustrative — check real OFAC in production) ──
 SANCTIONED_COUNTRIES = {"RU", "IR", "KP", "BY", "SY", "CU", "SD", "VE"}
 
+# ── Country name / alias → ISO-2 normalization ────────────────────────────────
+# The watchlist LLM and some seed data emit full country names; COUNTRY_RISK and
+# every downstream geo lookup is keyed by ISO-2. Normalize at entity construction
+# so hq_country is *always* ISO-2 by the time it reaches the scorer. Without this,
+# every COUNTRY_RISK lookup misses and geo flatlines at DEFAULT_COUNTRY_RISK.
+_COUNTRY_NAME_TO_ISO2: dict[str, str] = {
+    "taiwan": "TW", "republic of china": "TW",
+    "china": "CN", "people's republic of china": "CN", "prc": "CN", "mainland china": "CN",
+    "south korea": "KR", "korea, republic of": "KR", "republic of korea": "KR", "korea": "KR",
+    "north korea": "KP",
+    "japan": "JP",
+    "germany": "DE",
+    "netherlands": "NL", "the netherlands": "NL", "holland": "NL",
+    "ireland": "IE",
+    "united kingdom": "GB", "uk": "GB", "great britain": "GB", "britain": "GB", "england": "GB",
+    "united states": "US", "united states of america": "US", "usa": "US", "u.s.": "US",
+    "u.s.a.": "US", "america": "US",
+    "singapore": "SG",
+    "india": "IN",
+    "mexico": "MX",
+    "russia": "RU", "russian federation": "RU",
+    "iran": "IR",
+    "belarus": "BY",
+    "myanmar": "MM", "burma": "MM",
+    "brazil": "BR",
+    "australia": "AU",
+    "canada": "CA",
+    "france": "FR",
+    "sweden": "SE",
+    "switzerland": "CH",
+    "israel": "IL",
+    "saudi arabia": "SA",
+    "united arab emirates": "AE", "uae": "AE",
+    "vietnam": "VN",
+}
+
+# Set of all ISO-2 codes we recognise (risk index keys ∪ sanctioned ∪ alias targets).
+_KNOWN_ISO2: set[str] = (
+    set(COUNTRY_RISK) | SANCTIONED_COUNTRIES | set(_COUNTRY_NAME_TO_ISO2.values())
+)
+
+
+def normalize_country(value: str) -> str:
+    """
+    Normalize a country value to an ISO-2 code.
+
+    - Full names and common aliases ("China", "United Kingdom", "UK") map to ISO-2.
+    - Values that are already valid 2-letter ISO codes pass through (upper-cased).
+    - Empty / unknown values pass through unchanged so callers can decide how to
+      handle them (the geo scorer treats "" as an explicit data gap).
+    """
+    if not value:
+        return value
+    raw = value.strip()
+    if not raw:
+        return value
+
+    # Alias lookup first so 2-letter aliases like "UK" → "GB" aren't short-circuited
+    # by the ISO-2 passthrough below.
+    mapped = _COUNTRY_NAME_TO_ISO2.get(raw.lower())
+    if mapped:
+        return mapped
+
+    # Already an ISO-2 code (e.g. "tw", "US") — upper-case and pass through.
+    if len(raw) == 2 and raw.isalpha():
+        return raw.upper()
+
+    # Unknown longer string — return upper-cased original so it's at least visible;
+    # the scorer will fall back to DEFAULT_COUNTRY_RISK for anything off the index.
+    return raw.upper()
+
 
 def _load_weights(path: Optional[Path] = None) -> dict:
     fpath = path or settings.risk_weights_path
@@ -381,6 +452,8 @@ def _score_geopolitical(entity: Entity, fp: FootprintData) -> DimensionScore:
     country = entity.hq_country or (
         fp.internal_record.geographic_risk_country if fp.internal_record else ""
     )
+    # Defensive: normalize in case a fallback source still carries a full name.
+    country = normalize_country(country)
     country_risk = COUNTRY_RISK.get(country, DEFAULT_COUNTRY_RISK)
 
     if country_risk > 60:

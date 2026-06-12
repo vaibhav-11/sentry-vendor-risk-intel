@@ -10,9 +10,21 @@ from typing import Optional
 
 import httpx
 
-from src.models import NewsItem
+from src.models import NewsItem, SourceProvenanceAnchor
 
 logger = logging.getLogger(__name__)
+
+
+def build_news_anchor(item: NewsItem, index: int = 0) -> SourceProvenanceAnchor:
+    """Build a provenance anchor for a single news headline."""
+    return SourceProvenanceAnchor(
+        anchor_key=f"[NEWS-{item.published_at.strftime('%Y-%m-%d')}-{index}]",
+        source_name=item.source or "News wire",
+        source_url=item.url or "",
+        section_reference="Headline",
+        extracted_at=datetime.utcnow(),
+        verbatim_snippet=item.title[:240],
+    )
 
 # ── Sentiment word lists (lightweight, no model needed locally) ────────────────
 
