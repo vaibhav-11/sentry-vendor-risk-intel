@@ -10,12 +10,18 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from src.models import (
-    Entity, FootprintData, InternalVendorRecord, SourceProvenanceAnchor,
+    Entity, FootprintData, InternalVendorRecord, DriverEvidence,
     FinancialMetrics, NewsItem, SECFiling,
 )
-from src.data_sources.yfinance_client import fetch_financial_metrics, build_financial_anchor
-from src.data_sources.news_client import fetch_news, build_news_anchor
-from src.data_sources.sec_edgar import fetch_recent_filings, build_filing_anchor
+from src.data_sources.yfinance_client import (
+    fetch_financial_metrics, build_financial_evidence, build_financial_evidence_list,
+)
+from src.data_sources.news_client import (
+    fetch_news, build_news_evidence, fetch_gdelt_country_events,
+)
+from src.data_sources.sec_edgar import (
+    fetch_recent_filings, build_filing_evidence, no_us_filing_evidence,
+)
 from src.data_sources.wikipedia_client import fetch_company_description
 from config.settings import settings
 
@@ -60,32 +66,45 @@ def _collect_provenance(
     financials: FinancialMetrics | None,
     news_items: list[NewsItem],
     filings: list[SECFiling],
-) -> dict[str, SourceProvenanceAnchor]:
+    sec_evidence: list[DriverEvidence] | None = None,
+    geo_events: list[DriverEvidence] | None = None,
+) -> dict[str, DriverEvidence]:
     """
-    Build the provenance anchor map for whatever real data was actually fetched.
-    Keyed by field path (e.g. "financials.altman_z", "sec.10-K", "news.headline_0")
-    so the dashboard can attach each anchor to the figure it supports.
+    Build the provenance map (DriverEvidence) for whatever real data was actually
+    fetched. Keyed by field path (e.g. "financials.altman_z", "sec.10-K",
+    "news.headline_0", "geo.event_0") so the dashboard can attach each piece of
+    evidence to the figure it supports.
     """
-    anchors: dict[str, SourceProvenanceAnchor] = {}
+    anchors: dict[str, DriverEvidence] = {}
 
     # Financials — anchor only when we have a ticker and at least one real metric.
     if financials is not None and entity.ticker and (financials.data_quality or 0) > 0.2:
-        anchor = build_financial_anchor(entity.ticker, financials)
-        anchors["financials"] = anchor
+        ev = build_financial_evidence(entity.ticker, financials)
+        anchors["financials"] = ev
         if financials.altman_z_score is not None:
-            anchors["financials.altman_z"] = anchor
+            anchors["financials.altman_z"] = ev
 
-    # SEC filings — one anchor per filing, keyed by form type.
-    for filing in filings:
-        key = f"sec.{filing.form_type}"
-        if key not in anchors:   # keep the most recent (first) of each form type
-            anchors[key] = build_filing_anchor(filing)
+    # SEC filings — prefer the inline evidence captured at fetch time; fall back
+    # to building from the filing objects.
+    if sec_evidence:
+        for i, ev in enumerate(sec_evidence[:5]):
+            anchors[f"sec.{ev.value or i}"] = ev
+    else:
+        for filing in filings:
+            key = f"sec.{filing.form_type}"
+            if key not in anchors:
+                anchors[key] = build_filing_evidence(filing)
 
     # News — anchor the first few risk-relevant (or otherwise top) headlines.
     cited = [n for n in news_items if n.risk_relevant] or news_items
     for i, item in enumerate(cited[:3]):
         if item.url:   # only cite a headline we can actually link to
-            anchors[f"news.headline_{i}"] = build_news_anchor(item, i)
+            anchors[f"news.headline_{i}"] = build_news_evidence(item, i)
+
+    # Geopolitical events (country-level GDELT).
+    for i, ev in enumerate((geo_events or [])[:3]):
+        if ev.source_url:
+            anchors[f"geo.event_{i}"] = ev
 
     return anchors
 
@@ -101,7 +120,7 @@ _MOCK_FINANCIALS: dict[str, dict] = {
     "SSNLF": {"market_cap_usd": 3.7e11, "revenue_ttm_usd": 2.0e11, "debt_to_equity": 12.0,  "current_ratio": 2.1, "altman_z_score": 4.8,  "revenue_growth_yoy_pct": 4.0},
     "AVGO":  {"market_cap_usd": 6.0e11, "revenue_ttm_usd": 4.6e10, "debt_to_equity": 110.0, "current_ratio": 1.0, "altman_z_score": 2.6,  "revenue_growth_yoy_pct": 12.0},
     "GLW":   {"market_cap_usd": 3.0e10, "revenue_ttm_usd": 1.3e10, "debt_to_equity": 78.0,  "current_ratio": 1.5, "altman_z_score": 2.9,  "revenue_growth_yoy_pct": 1.0},
-    "T":     {"market_cap_usd": 1.3e11, "revenue_ttm_usd": 1.2e11, "debt_to_equity": 130.0, "current_ratio": 0.7, "altman_z_score": 1.6,  "revenue_growth_yoy_pct": -1.0},
+    "T":     {"market_cap_usd": 1.3e11, "revenue_ttm_usd": 1.2e11, "debt_to_equity": 130.0, "current_ratio": 0.7, "altman_z_score": 1.9,  "revenue_growth_yoy_pct": -1.0},
     "AMZN":  {"market_cap_usd": 1.9e12, "revenue_ttm_usd": 5.7e11, "debt_to_equity": 55.0,  "current_ratio": 1.1, "altman_z_score": 4.0,  "revenue_growth_yoy_pct": 11.0},
     "GOOGL": {"market_cap_usd": 2.1e12, "revenue_ttm_usd": 3.1e11, "debt_to_equity": 9.0,   "current_ratio": 2.0, "altman_z_score": 8.5,  "revenue_growth_yoy_pct": 13.0},
     "ARM":   {"market_cap_usd": 1.4e11, "revenue_ttm_usd": 3.2e9,  "debt_to_equity": 5.0,   "current_ratio": 4.5, "altman_z_score": 9.2,  "revenue_growth_yoy_pct": 20.0},
@@ -111,6 +130,10 @@ _MOCK_FINANCIALS: dict[str, dict] = {
     "SFTBY": {"market_cap_usd": 9.0e10, "revenue_ttm_usd": 4.2e10, "debt_to_equity": 180.0, "current_ratio": 1.2, "altman_z_score": 1.4,  "revenue_growth_yoy_pct": -8.0},
     "APD":   {"market_cap_usd": 6.0e10, "revenue_ttm_usd": 1.2e10, "debt_to_equity": 70.0,  "current_ratio": 1.8, "altman_z_score": 3.4,  "revenue_growth_yoy_pct": 0.0},
     "LIN":   {"market_cap_usd": 2.1e11, "revenue_ttm_usd": 3.3e10, "debt_to_equity": 60.0,  "current_ratio": 0.9, "altman_z_score": 3.1,  "revenue_growth_yoy_pct": 2.0},
+    # Fix 2: Pegatron (TWSE: 4938.TW) — asset-heavy contract manufacturer. Mid-range
+    # Altman Z (grey zone), modest growth, moderate leverage, thin liquidity. Stops
+    # fin_score collapsing to the 50.0 missing-data default and populates fin_evidence.
+    "4938.TW": {"market_cap_usd": 6.0e9, "revenue_ttm_usd": 4.0e10, "debt_to_equity": 85.0,  "current_ratio": 1.1, "altman_z_score": 2.1,  "revenue_growth_yoy_pct": 3.0},
 }
 
 
@@ -121,10 +144,17 @@ def _build_mock_footprint(entity: Entity) -> FootprintData:
     headline, and the matching provenance anchors so the mock path exercises
     the entire grounding schema end to end.
     """
+    from src.data_sources.sec_edgar import NON_US_LISTED
+    from src.data_sources.news_client import _COUNTRY_QUERY
+
     ticker = entity.ticker
     financials: FinancialMetrics | None = None
     filings: list[SECFiling] = []
     news_items: list[NewsItem] = []
+    sec_evidence: list[DriverEvidence] = []
+    fin_evidence: list[DriverEvidence] = []
+
+    is_foreign = entity.name.lower() in NON_US_LISTED
 
     if ticker and ticker.upper() in _MOCK_FINANCIALS:
         data = _MOCK_FINANCIALS[ticker.upper()]
@@ -134,18 +164,39 @@ def _build_mock_footprint(entity: Entity) -> FootprintData:
             data_quality=0.9,
             **data,
         )
+        # Issue 5: per-metric financial provenance for the mock path.
+        fin_evidence = build_financial_evidence_list(ticker, financials)
         # A risk-flagged 10-K for distressed names; a clean one otherwise.
-        z = data.get("altman_z_score", 5.0)
-        flags = ["going concern"] if z < 1.81 else (["impairment"] if z < 3.0 else [])
-        filings.append(SECFiling(
-            entity_id=entity.id,
-            form_type="10-K",
-            filed_at=datetime.utcnow(),
-            accession_number="0000000000-24-000000",
-            description="10-K annual report (mock)",
-            risk_flags=flags,
-            url=f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company={entity.name.replace(' ', '+')}&type=10-K",
-        ))
+        # Foreign entities are not US-listed, so they get the no-filings entry.
+        if not is_foreign:
+            z = data.get("altman_z_score", 5.0)
+            flags = ["going concern"] if z < 1.81 else (["impairment"] if z < 3.0 else [])
+            filing = SECFiling(
+                entity_id=entity.id,
+                form_type="10-K",
+                filed_at=datetime.utcnow(),
+                accession_number="0000000000-24-000000",
+                description="10-K annual report (mock)",
+                risk_flags=flags,
+                url=f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company={entity.name.replace(' ', '+')}&type=10-K",
+            )
+            filings.append(filing)
+            sec_evidence.append(build_filing_evidence(filing))
+
+    # Compliance evidence is never empty: foreign / no-ticker entities get the
+    # explicit no-US-filings entry (E2 mock parity).
+    if not sec_evidence:
+        sec_evidence.append(no_us_filing_evidence(entity.name, ticker))
+
+    # Geopolitical events — one stub GDELT headline per entity, country-flavoured.
+    country = entity.hq_country or "US"
+    country_name = _COUNTRY_QUERY.get(country, country)
+    geo_events: list[DriverEvidence] = [DriverEvidence(
+        label=f"GDELT ({country_name}): trade-policy and supply-chain coverage monitored for {country_name}",
+        source_url=f"https://www.gdeltproject.org/search/?query={country_name.replace(' ', '+')}",
+        retrieved_at=datetime.utcnow(),
+        value=datetime.utcnow().strftime("%Y-%m-%d"),
+    )]
 
     # A single representative headline per entity (sentiment follows financial health).
     if ticker:
@@ -171,7 +222,8 @@ def _build_mock_footprint(entity: Entity) -> FootprintData:
         ))
 
     internal_record = get_internal_record(entity.name)
-    anchors = _collect_provenance(entity, financials, news_items, filings)
+    anchors = _collect_provenance(entity, financials, news_items, filings,
+                                  sec_evidence=sec_evidence, geo_events=geo_events)
 
     news_sentiments = [n.sentiment_score for n in news_items]
     avg_sentiment   = sum(news_sentiments) / len(news_sentiments) if news_sentiments else 0.0
@@ -191,6 +243,9 @@ def _build_mock_footprint(entity: Entity) -> FootprintData:
         negative_news_count=neg_count,
         risk_news_headlines=risk_headlines,
         provenance_anchors=anchors,
+        sec_evidence=sec_evidence,
+        geo_events=geo_events,
+        fin_evidence=fin_evidence,
     )
 
 
@@ -219,14 +274,20 @@ async def aggregate_entity_footprint(
     # Fan out all fetches concurrently
     financials_task   = fetch_financial_metrics(entity.id, entity.ticker)
     news_task         = fetch_news(entity.name, entity.id, newsapi_key=newsapi_key)
-    filings_task      = fetch_recent_filings(entity.id, entity.ticker, sec_user_agent)
+    filings_task      = fetch_recent_filings(
+        entity.id, entity.ticker, sec_user_agent, entity_name=entity.name
+    )
     description_task  = fetch_company_description(entity.name)
+    # Geopolitical events are jurisdiction-level — fetched once per country and
+    # cached inside news_client, regardless of how many vendors share a country.
+    geo_task          = fetch_gdelt_country_events(entity.hq_country)
 
-    financials, news_items, filings, description = await asyncio.gather(
+    financials, news_items, filings_result, description, geo_events = await asyncio.gather(
         financials_task,
         news_task,
         filings_task,
         description_task,
+        geo_task,
         return_exceptions=True,
     )
 
@@ -237,11 +298,24 @@ async def aggregate_entity_footprint(
     if isinstance(news_items, Exception):
         logger.warning(f"News failed for {entity.name}: {news_items}")
         news_items = []
-    if isinstance(filings, Exception):
-        logger.warning(f"Filings failed for {entity.name}: {filings}")
-        filings = []
+    if isinstance(filings_result, Exception):
+        logger.warning(f"Filings failed for {entity.name}: {filings_result}")
+        filings_result = ([], [no_us_filing_evidence(entity.name, entity.ticker)])
     if isinstance(description, Exception):
         description = ""
+    if isinstance(geo_events, Exception):
+        geo_events = []
+
+    filings, sec_evidence = filings_result
+    # Compliance evidence is never empty.
+    if not sec_evidence:
+        sec_evidence = [no_us_filing_evidence(entity.name, entity.ticker)]
+
+    # Issue 5: per-metric financial provenance (live path).
+    fin_evidence = (
+        build_financial_evidence_list(entity.ticker, financials)
+        if financials is not None and entity.ticker else []
+    )
 
     # Internal vendor record (synchronous lookup)
     internal_record = get_internal_record(entity.name)
@@ -253,7 +327,10 @@ async def aggregate_entity_footprint(
     risk_headlines  = [n.title for n in news_items if n.risk_relevant][:5]
 
     # Record provenance for whatever real data we actually fetched.
-    anchors = _collect_provenance(entity, financials, news_items or [], filings or [])
+    anchors = _collect_provenance(
+        entity, financials, news_items or [], filings or [],
+        sec_evidence=sec_evidence, geo_events=geo_events or [],
+    )
 
     return FootprintData(
         entity_id=entity.id,
@@ -268,6 +345,9 @@ async def aggregate_entity_footprint(
         negative_news_count=neg_count,
         risk_news_headlines=risk_headlines,
         provenance_anchors=anchors,
+        sec_evidence=sec_evidence,
+        geo_events=geo_events or [],
+        fin_evidence=fin_evidence,
     )
 
 

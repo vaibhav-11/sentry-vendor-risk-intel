@@ -46,25 +46,25 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 transition group">
+        <div onclick="cardOpenPortfolioValue()" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 transition group">
             <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-blue-400 transition">Total Portfolio Value</p>
             <h3 class="text-xl font-bold text-white mt-1">{{ stats.total_portfolio_value_abbr }}</h3>
-            <p class="text-[11px] text-slate-500 mt-0.5">Click to view aggregate expenditure data ↗</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">Click to view the register sorted by contract value ↗</p>
         </div>
-        <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-red-500 transition group">
+        <div onclick="cardOpenVaR()" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-red-500 transition group">
             <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-red-400 transition">Portfolio Value-at-Risk</p>
             <h3 class="text-xl font-bold text-red-400 mt-1">{{ stats.total_value_at_risk_abbr }}</h3>
-            <p class="text-[11px] text-red-500/80 mt-0.5">Click to analyze downstream cascade exposure ↗</p>
+            <p class="text-[11px] text-red-500/80 mt-0.5">Click to sort the register by exposure ↗</p>
         </div>
-        <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-amber-500 transition group">
+        <div onclick="cardOpenHHI()" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-amber-500 transition group">
             <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-amber-400 transition">Geopolitical HHI Score</p>
             <h3 class="text-xl font-bold text-amber-400 mt-1">{{ stats.geo_concentration_hhi }}</h3>
-            <p class="text-[11px] text-slate-500 mt-0.5">Click to view regional asset distributions ↗</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">Click to jump to the regional-concentration chart ↗</p>
         </div>
-        <div onclick="switchTab('map')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-indigo-500 transition group">
+        <div onclick="cardOpenNodes()" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-indigo-500 transition group">
             <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-indigo-400 transition">Supply Chain Nodes</p>
             <h3 class="text-xl font-bold text-white mt-1">{{ stats.total_entities }} Assets <span class="text-xs font-normal text-red-400">({{ stats.spof_count }} SPOFs)</span></h3>
-            <p class="text-[11px] text-slate-500 mt-0.5">Click to inspect supply chain graph topology ↗</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">Click to focus the network graph ↗</p>
         </div>
     </div>
 
@@ -102,9 +102,9 @@
                             <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('type')">Category</th>
                             <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('country')">HQ</th>
                             <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('score')">Risk Score</th>
-                            <th class="pb-2 text-right cursor-pointer hover:text-white select-none" onclick="sortAnalytics('annual_spend_usd')">Contract Value</th>
+                            <th id="th-contract-value" class="pb-2 text-right cursor-pointer hover:text-white select-none rounded transition" onclick="sortAnalytics('annual_spend_usd')">Contract Value</th>
                             <th class="pb-2 text-right cursor-pointer hover:text-white select-none" onclick="sortAnalytics('dependence_pct')">Dependence&nbsp;%</th>
-                            <th class="pb-2 text-right pr-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('value_at_risk')">Exposure</th>
+                            <th id="th-exposure" class="pb-2 text-right pr-2 cursor-pointer hover:text-white select-none rounded transition" onclick="sortAnalytics('value_at_risk')">Exposure</th>
                         </tr>
                     </thead>
                     <tbody id="analytics-table-body" class="divide-y divide-slate-700/40"></tbody>
@@ -318,10 +318,60 @@
             document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById('tab-' + name).classList.add('active');
-            if(event && event.currentTarget) { event.currentTarget.classList.add('active'); }
+            // Activate the matching tab button by its switchTab('name') handler, so
+            // navigation from a stat card (not just a tab click) highlights correctly.
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                const h = b.getAttribute('onclick') || '';
+                if (h.includes(`switchTab('${name}')`)) b.classList.add('active');
+            });
             if (TAB_TITLES[name]) { document.title = `${BASE_TITLE} · ${TAB_TITLES[name]}`; }
             if (name === 'map') { renderLeftToRightNetwork(); }
             if (name === 'analytics') { renderExposureScatter(); }
+        }
+
+        // ── C3: stat cards carry context through to the view they open ──────────
+        function _flashEl(el) {
+            if (!el) return;
+            el.classList.add('ring-2', 'ring-blue-400');
+            setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 1600);
+        }
+        function cardOpenPortfolioValue() {
+            switchTab('analytics');
+            // Land sorted by contract value (impact axis).
+            if (analyticsSort.key !== 'annual_spend_usd') sortAnalytics('annual_spend_usd');
+            else showTransparencyConsole();
+            const th = document.getElementById('th-contract-value');
+            _flashEl(th);
+            th?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        function cardOpenVaR() {
+            switchTab('analytics');
+            // Land sorted by exposure (VaR) descending.
+            if (analyticsSort.key !== 'value_at_risk') sortAnalytics('value_at_risk');
+            else showTransparencyConsole();
+            const th = document.getElementById('th-exposure');
+            _flashEl(th);
+            th?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        function cardOpenHHI() {
+            switchTab('analytics');
+            const chart = document.getElementById('geo-distribution-container');
+            chart?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            _flashEl(chart);
+        }
+        function cardOpenNodes() {
+            switchTab('map');
+            // Briefly select-highlight all nodes in the network.
+            setTimeout(() => {
+                if (networkInstance) {
+                    const ids = VIS_NODES_ARRAY.map(n => n.id);
+                    try {
+                        networkInstance.selectNodes(ids);
+                        networkInstance.fit({ animation: { duration: 600 } });
+                        setTimeout(() => networkInstance.unselectAll(), 1400);
+                    } catch (e) { /* selection is best-effort */ }
+                }
+            }, 120);
         }
 
         // ── STABLE LEFT-TO-RIGHT HIERARCHY (vis.js hierarchical layout, physics off) ──
@@ -351,7 +401,17 @@
 
             // Layout-only copy: override `level` for hierarchical placement without
             // mutating VIS_NODES_ARRAY (which the table/scatter/inspector read by ref).
-            const layoutNodes = VIS_NODES_ARRAY.map(n => ({ ...n, level: layoutLevel(n) }));
+            // SPOF nodes (Fix 5) carry a bright red ring so single points of failure
+            // are visible in the graph, not just in the header count.
+            const layoutNodes = VIS_NODES_ARRAY.map(n => {
+                const ln = { ...n, level: layoutLevel(n) };
+                if (n.meta && n.meta.is_spof) {
+                    ln.borderWidth = 4;
+                    ln.color = { border: '#ef4444', background: '#7f1d1d', highlight: { border: '#f87171', background: '#991b1b' } };
+                    ln.label = '⚠ ' + n.label;
+                }
+                return ln;
+            });
             nodesDataSet.add(layoutNodes);
             edgesDataSet.add(VIS_EDGES_ARRAY);
 
@@ -382,50 +442,104 @@
             });
         }
 
+        // ── Render a DriverEvidence list as clickable source links (E3/F2/C2) ──
+        function renderEvidenceLinks(evidence) {
+            if (!evidence || evidence.length === 0) return '';
+            return evidence.map(e => {
+                const isAnchorLink = e.source_url && e.source_url.startsWith('#');
+                const labelHtml = `${e.label}${e.value && !e.label.includes(e.value) ? ` <span class="text-slate-500">(${e.value})</span>` : ''}`;
+                if (!e.source_url) {
+                    return `<li class="text-slate-400 text-[10px] leading-snug">• ${labelHtml}</li>`;
+                }
+                if (isAnchorLink) {
+                    // Cross-link into the analytics regional-concentration chart (F2).
+                    return `<li class="text-[10px] leading-snug">• <a onclick="switchTab('analytics');document.querySelector('${e.source_url}')?.scrollIntoView({behavior:'smooth'});" class="text-blue-400 hover:underline cursor-pointer">${labelHtml} ↗</a></li>`;
+                }
+                return `<li class="text-[10px] leading-snug">• <a href="${e.source_url}" target="_blank" rel="noopener" class="text-blue-400 hover:underline break-words">${labelHtml} ↗</a></li>`;
+            }).join('');
+        }
+
+        // ── Render one dimension block: score, weight, drivers, gaps, evidence (C1) ──
+        function renderDimension(name, score, weight, drivers, gaps, evidence, colour) {
+            const driverItems = (drivers || []).map(d => `<li class="leading-snug">• ${d}</li>`).join('')
+                || '<li class="text-slate-500 italic">No drivers recorded.</li>';
+            const gapItems = (gaps || []).length > 0
+                ? `<div class="mt-1 text-amber-400/90 text-[10px]"><span class="uppercase font-semibold">Data gaps:</span><ul class="ml-2">${gaps.map(g => `<li class="leading-snug">⚠ ${g}</li>`).join('')}</ul></div>`
+                : '';
+            const evidenceItems = renderEvidenceLinks(evidence);
+            const evidenceBlock = evidenceItems
+                ? `<div class="mt-1"><span class="text-[9px] text-slate-500 uppercase">Sources:</span><ul class="ml-1">${evidenceItems}</ul></div>`
+                : '';
+            return `
+                <div class="bg-slate-900 border border-slate-800 p-2 rounded text-[11px]">
+                    <div class="flex justify-between items-baseline mb-1">
+                        <span class="font-bold ${colour}">${name} <span class="text-slate-500 font-normal">(${weight}% weight)</span></span>
+                        <strong class="text-slate-100">${score}/100</strong>
+                    </div>
+                    <ul class="text-slate-400 space-y-0.5">${driverItems}</ul>
+                    ${gapItems}
+                    ${evidenceBlock}
+                </div>`;
+        }
+
         function showInspector(id) {
             const node = VIS_NODES_ARRAY.find(n => n.id === id);
             if (!node) return;
+            const m = node.meta;
             const content = document.getElementById('inspector-content');
             content.classList.remove('hidden');
 
-            const anchors = node.meta.provenance_anchors || {};
+            // C2: all provenance anchors as clickable links, grouped by field key.
+            const anchors = m.provenance_anchors || {};
             const anchorEntries = Object.entries(anchors);
             let sourcesList = anchorEntries.length > 0
                 ? anchorEntries.map(([key, a]) => {
-                    const label = `${a.source_name}${a.section_reference ? ' · ' + a.section_reference : ''}`;
                     const link = a.source_url
-                        ? `<a href="${a.source_url}" target="_blank" rel="noopener" class="text-blue-400 hover:underline break-all">${label} ↗</a>`
-                        : `<span class="text-slate-400">${label}</span>`;
+                        ? `<a href="${a.source_url}" target="_blank" rel="noopener" class="text-blue-400 hover:underline break-words">${a.label} ↗</a>`
+                        : `<span class="text-slate-400">${a.label}</span>`;
                     return `<li class="bg-slate-900 px-2 py-1 border border-slate-700 rounded text-[11px]">
                         <div class="font-mono text-slate-500 text-[9px] uppercase">${key}</div>
                         ${link}
-                        ${a.verbatim_snippet ? `<div class="text-slate-400 italic mt-0.5">"${a.verbatim_snippet}"</div>` : ''}
                     </li>`;
                 }).join('')
                 : `<li class="text-slate-500 italic">No source data fetched for this entity.</li>`;
 
+            // G2: ranked, justified pre-vetted alternatives.
+            const backups = m.backups || [];
+            const backupsBlock = backups.length > 0
+                ? `<div>
+                       <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Pre-vetted Alternatives (ranked):</span>
+                       <ol class="space-y-1 list-decimal list-inside text-[11px]">
+                       ${backups.map(b => `<li class="text-slate-200">${b.name}<span class="text-slate-400"> — ${b.justification || ''}</span></li>`).join('')}
+                       </ol>
+                   </div>`
+                : '';
+
+            const w = m.weights || { fin: 30, ops: 30, comp: 20, geo: 20 };
+
             content.innerHTML = `
                 <div class="border-b border-slate-700 pb-2">
-                    <h4 class="text-sm font-bold text-blue-400">${node.meta.name}</h4>
-                    <p class="text-[10px] text-slate-400 uppercase font-mono">${node.meta.type} | Sector: ${node.meta.industry} | ${node.meta.country}</p>
+                    <h4 class="text-sm font-bold text-blue-400">${m.name}${m.is_spof ? ' <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-950 text-red-400 border border-red-900 align-middle">⚠ SINGLE POINT OF FAILURE</span>' : ''}</h4>
+                    <p class="text-[10px] text-slate-400 uppercase font-mono">${m.type} | Sector: ${m.industry} | ${m.country}</p>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-xs">
                     <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
-                        <span class="text-[10px] text-slate-500 uppercase block">Risk Score</span>
-                        <strong class="text-sm font-bold text-white">${node.meta.score} / 100</strong>
+                        <span class="text-[10px] text-slate-500 uppercase block">Composite Risk</span>
+                        <strong class="text-sm font-bold text-white">${m.score} / 100</strong>
                     </div>
                     <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
                         <span class="text-[10px] text-slate-500 uppercase block">Calculated VaR</span>
-                        <strong class="text-sm font-bold text-red-400">$${node.meta.value_at_risk.toLocaleString()}</strong>
+                        <strong class="text-sm font-bold text-red-400">$${(m.value_at_risk||0).toLocaleString()}</strong>
                     </div>
                 </div>
-                <div class="grid grid-cols-4 gap-1 text-[10px] text-center">
-                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">FIN</span><strong class="text-slate-200">${node.meta.fin_score}</strong></div>
-                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">OPS</span><strong class="text-slate-200">${node.meta.ops_score}</strong></div>
-                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">COMP</span><strong class="text-slate-200">${node.meta.comp_score}</strong></div>
-                    <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">GEO</span><strong class="text-slate-200">${node.meta.geo_score}</strong></div>
+                <p class="text-[9px] text-slate-500 text-center">Composite = Fin·${w.fin}% + Ops·${w.ops}% + Comp·${w.comp}% + Geo·${w.geo}%</p>
+                <div class="space-y-2">
+                    ${renderDimension('Financial', m.fin_score, w.fin, m.fin_drivers, m.fin_gaps, m.fin_evidence, 'text-blue-400')}
+                    ${renderDimension('Operational', m.ops_score, w.ops, m.ops_drivers, m.ops_gaps, [], 'text-emerald-400')}
+                    ${renderDimension('Compliance', m.comp_score, w.comp, m.comp_drivers, m.comp_gaps, m.comp_evidence, 'text-amber-400')}
+                    ${renderDimension('Geopolitical', m.geo_score, w.geo, m.geo_drivers, m.geo_gaps, m.geo_evidence, 'text-purple-400')}
                 </div>
-                <p class="text-[9px] text-slate-500 text-center -mt-1">Financial (30%) · Operational (30%) · Compliance (20%) · Geopolitical (20%)</p>
+                ${backupsBlock}
                 <div>
                     <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Cited Sources (provenance):</span>
                     <ul class="space-y-1">${sourcesList}</ul>
@@ -489,11 +603,11 @@
                             </div>
                             <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                                 <p class="font-bold text-amber-400 mb-1">Compliance Scope (${r.meta.comp_score}/100)</p>
-                                <p class="text-slate-400 text-[11px]">SEC disclosure requirements validated. No open litigation events flags discovered.</p>
+                                <ul class="list-disc pl-4 space-y-1 text-slate-400 text-[11px]">${(r.meta.comp_drivers||[]).map(d => `<li>${d}</li>`).join('') || '<li class="list-none text-slate-500 italic">No compliance drivers recorded.</li>'}</ul>
                             </div>
                             <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                                 <p class="font-bold text-purple-400 mb-1">Geopolitical Scope (${r.meta.geo_score}/100)</p>
-                                <p class="text-slate-400 text-[11px]">Territory concentration exposure checked against local sovereign disruption indices.</p>
+                                <ul class="list-disc pl-4 space-y-1 text-slate-400 text-[11px]">${(r.meta.geo_drivers||[]).map(d => `<li>${d}</li>`).join('') || '<li class="list-none text-slate-500 italic">No geopolitical drivers recorded.</li>'}</ul>
                             </div>
                         </div>
                     </td>
@@ -755,10 +869,13 @@
                 return;
             }
             list.innerHTML = PLAYBOOK_DATA.map(p => `
-                <button onclick="activatePlaybook(${p.id})" class="w-full text-left p-3 bg-slate-900 text-xs font-semibold rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-900/80 transition block text-slate-300">
+                <button id="playbook-btn-${p.id}" onclick="activatePlaybook(${p.id})" class="w-full text-left p-3 bg-slate-900 text-xs font-semibold rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-900/80 transition block text-slate-300">
                     ⚡ ${p.title}
                 </button>
             `).join('');
+            // Fix 4: auto-select the first playbook so the Outreach Generator shows
+            // a real subject line and email body on load — no click required.
+            activatePlaybook(PLAYBOOK_DATA[0].id);
         }
 
         function activatePlaybook(id) {
@@ -766,6 +883,14 @@
             if (!playbook) return;
             document.getElementById('comm-subject').textContent = playbook.subject;
             document.getElementById('comm-body').value = playbook.body;
+            // Highlight the active playbook button.
+            (PLAYBOOK_DATA || []).forEach(p => {
+                const btn = document.getElementById('playbook-btn-' + p.id);
+                if (btn) {
+                    btn.classList.toggle('border-blue-500', p.id === id);
+                    btn.classList.toggle('border-slate-700', p.id !== id);
+                }
+            });
         }
 
         function copyCommMessage() {

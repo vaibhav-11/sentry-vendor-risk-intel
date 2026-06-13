@@ -11,19 +11,19 @@ from typing import Optional
 import yfinance as yf
 import numpy as np
 
-from src.models import FinancialMetrics, SourceProvenanceAnchor
+from src.models import FinancialMetrics, DriverEvidence
 
 logger = logging.getLogger(__name__)
 
 
-def build_financial_anchor(
+def build_financial_evidence(
     ticker: str,
     fin: FinancialMetrics,
-) -> SourceProvenanceAnchor:
+) -> DriverEvidence:
     """
-    Build a provenance anchor for financial metrics sourced from Yahoo Finance.
-    The URL points at the public yfinance/Yahoo quote page for the ticker so the
-    cited figures are followable to their provider.
+    Build a DriverEvidence for financial metrics sourced from Yahoo Finance.
+    The URL points at the public Yahoo quote page for the ticker so the cited
+    figures are followable to their provider.
     """
     snippet_bits = []
     if fin.market_cap_usd:
@@ -34,13 +34,68 @@ def build_financial_anchor(
         snippet_bits.append(f"D/E {fin.debt_to_equity:.1f}")
     snippet = "; ".join(snippet_bits) or "Financial metrics retrieved from provider"
 
-    return SourceProvenanceAnchor(
-        anchor_key=f"[YF-{ticker.upper()}]",
-        source_name="Yahoo Finance (yfinance)",
+    return DriverEvidence(
+        label=f"Yahoo Finance ({ticker.upper()}): {snippet}",
         source_url=f"https://finance.yahoo.com/quote/{ticker.upper()}",
-        section_reference="Key Statistics / Balance Sheet",
-        verbatim_snippet=snippet,
+        retrieved_at=datetime.utcnow(),
+        value=snippet,
     )
+
+
+def build_financial_evidence_list(
+    ticker: str,
+    fin: FinancialMetrics,
+) -> list[DriverEvidence]:
+    """
+    Emit one DriverEvidence per computed financial metric (Issue 5) — Altman
+    Z-score, revenue growth YoY, D/E ratio, current ratio — each linking back to
+    the Yahoo quote page. Labels mirror the driver strings the financial scorer
+    produces so the inspector evidence lines up 1:1 with the rendered drivers.
+    """
+    if fin is None or not ticker:
+        return []
+    url = f"https://finance.yahoo.com/quote/{ticker.upper()}"
+    now = datetime.utcnow()
+    out: list[DriverEvidence] = []
+
+    if fin.altman_z_score is not None:
+        z = fin.altman_z_score
+        zone = ("Distress Zone (High Insolvency Risk)" if z < 1.81
+                else "Grey Zone (Unsettled Volatility)" if z < 2.99
+                else "Safe Zone (Strong Capital Buffer)")
+        out.append(DriverEvidence(
+            label=f"Altman Z-Score {z:.2f}: {zone}",
+            source_url=url, retrieved_at=now, value=f"{z:.2f}",
+        ))
+    if fin.revenue_growth_yoy_pct is not None:
+        g = fin.revenue_growth_yoy_pct
+        if g < -15:
+            lbl = f"Revenue structural decline: {g:.1f}% YoY contraction"
+        elif g < 0:
+            lbl = f"Revenue contraction warning: {g:.1f}% YoY drop"
+        else:
+            lbl = f"Revenue expansion verified: +{g:.1f}% YoY growth"
+        out.append(DriverEvidence(
+            label=lbl, source_url=url, retrieved_at=now, value=f"{g:.1f}%",
+        ))
+    if fin.debt_to_equity is not None:
+        de = fin.debt_to_equity
+        posture = ("Hyper-leveraged structural posture" if de > 200
+                   else "Elevated balance sheet debt load" if de > 100
+                   else "Conservative leverage alignment")
+        out.append(DriverEvidence(
+            label=f"Debt-to-Equity {de:.1f}%: {posture}",
+            source_url=url, retrieved_at=now, value=f"{de:.1f}%",
+        ))
+    if fin.current_ratio is not None:
+        cr = fin.current_ratio
+        liq = ("Illiquidity threat (Current Liabilities exceed Assets)" if cr < 1.0
+               else "Fluid working asset liquidity position")
+        out.append(DriverEvidence(
+            label=f"Current Ratio {cr:.2f}: {liq}",
+            source_url=url, retrieved_at=now, value=f"{cr:.2f}",
+        ))
+    return out
 
 
 def _safe_float(val, default=None) -> Optional[float]:

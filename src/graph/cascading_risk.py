@@ -80,7 +80,18 @@ def compute_node_metrics(
         except Exception: descendants = set()
         blast_radius = round(len(descendants) / max(total_nodes - 1, 1) * 100, 1)
 
-        is_spof = (bc > 0.15 and in_deg <= 1) or blast_radius > 40
+        # Fix 5: betweenness alone misses real bottlenecks. TSMC sits at
+        # betweenness 0.0625 — below the 0.15 bar — yet it is single-source with
+        # three downstream dependents, which makes it a single point of failure by
+        # definition. A single-source vendor that anything depends on IS a SPOF,
+        # regardless of centrality. Resolve the single-source flag from the
+        # internal vendor record (same source the severity model uses).
+        node_single_source, _, _ = _disruption_flags(node_id, footprint_data)
+        is_spof = (
+            (bc > 0.15 and in_deg <= 1)
+            or blast_radius > 40
+            or (node_single_source and len(descendants) >= 1)
+        )
         base_score = risk_scores[node_id].composite_score if node_id in risk_scores else 50.0
 
         centrality_factor = 1.0 + (bc * cascade_multiplier)
@@ -114,6 +125,14 @@ def compute_node_metrics(
             )
             dep_strength = G.edges[dep_id, node_id].get("dependency_strength", 0.5)
             cascade_var += child_spend * (child_score / 100.0) * dep_strength
+
+        # Fix 1: cascade VaR is, by definition, exposure propagated to *downstream
+        # dependents*. A node with no downstream dependents (a leaf — e.g. the
+        # customer nodes AT&T / Amazon, whose only graph neighbour is the target
+        # they hang off of) cannot cascade risk to anyone. Gate it hard to zero so
+        # an incoming predecessor edge can never manufacture phantom cascade VaR.
+        if len(descendants) == 0:
+            cascade_var = 0.0
 
         var_total = direct_var + cascade_var
 

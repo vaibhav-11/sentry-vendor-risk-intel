@@ -10,29 +10,51 @@ from typing import Optional
 
 import httpx
 
-from src.models import SECFiling, SourceProvenanceAnchor
+from src.models import SECFiling, DriverEvidence
 
 logger = logging.getLogger(__name__)
 
+# Entities with no US listing — EDGAR full-text search will return nothing for
+# these, so we emit an explicit no-filings DriverEvidence rather than a blank.
+# (E2) The compliance dimension must never be left unattributed for them.
+NON_US_LISTED = {
+    "tsmc", "samsung electronics", "foxconn", "shin-etsu chemical", "pegatron",
+    "asml", "softbank group", "arm holdings",
+}
 
-def build_filing_anchor(filing: SECFiling) -> SourceProvenanceAnchor:
+
+def build_filing_evidence(filing: SECFiling) -> DriverEvidence:
     """
-    Build a provenance anchor for a single SEC filing. The URL is the EDGAR
-    full-text-search link already resolved on the SECFiling object.
+    Build a DriverEvidence for a single SEC filing, captured inline at fetch
+    time. The URL is the direct EDGAR document link resolved on the SECFiling.
     """
+    filed = filing.filed_at.strftime("%Y-%m-%d")
     if filing.risk_flags:
-        snippet = f"Risk flags detected: {', '.join(filing.risk_flags)}"
-        section = "Item 1A. Risk Factors"
+        label = f"{filing.form_type} filed {filed} — risk flags: {', '.join(filing.risk_flags)}"
     else:
-        snippet = f"{filing.form_type} filed {filing.filed_at.strftime('%Y-%m-%d')}"
-        section = f"{filing.form_type} cover"
-
-    return SourceProvenanceAnchor(
-        anchor_key=f"[SEC-{filing.form_type}-{filing.filed_at.year}]",
-        source_name="SEC EDGAR",
+        label = f"{filing.form_type} filed {filed}"
+    return DriverEvidence(
+        label=label,
         source_url=filing.url or "https://www.sec.gov/cgi-bin/browse-edgar",
-        section_reference=section,
-        verbatim_snippet=snippet,
+        retrieved_at=datetime.utcnow(),
+        value=filing.form_type,
+    )
+
+
+def edgar_search_url(ticker_or_name: str) -> str:
+    """The EDGAR full-text search URL we attempt for an entity (used as the
+    source link on the explicit no-filings evidence for foreign entities)."""
+    q = ticker_or_name.replace(" ", "+")
+    return f"https://efts.sec.gov/LATEST/search-index?q={q}"
+
+
+def no_us_filing_evidence(entity_name: str, ticker: Optional[str]) -> DriverEvidence:
+    """The single explicit DriverEvidence emitted for non-US-listed entities (E2)."""
+    return DriverEvidence(
+        label="No SEC filings — non-US-listed entity",
+        source_url=edgar_search_url(ticker or entity_name),
+        retrieved_at=datetime.utcnow(),
+        value="non-us-listed",
     )
 
 EDGAR_SEARCH_URL = "https://efts.sec.gov/LATEST/search-index"
@@ -77,21 +99,32 @@ async def fetch_recent_filings(
     user_agent: str,
     max_filings: int = 5,
     form_types: Optional[list[str]] = None,
-) -> list[SECFiling]:
+    entity_name: str = "",
+) -> tuple[list[SECFiling], list[DriverEvidence]]:
     """
-    Fetch recent SEC filings for a company by ticker.
-    Returns a list of SECFiling objects, flagging risk-relevant content.
-    """
-    if not ticker:
-        return []
+    Fetch recent SEC filings for a company by ticker (E2).
 
+    Returns (filings, evidence) where `evidence` is a list of DriverEvidence
+    captured inline at fetch time — one per filing for US-listed entities, or a
+    single explicit "No SEC filings — non-US-listed entity" entry for foreign
+    ones / entities with no resolvable CIK. Compliance evidence is never empty.
+    """
     form_types = form_types or ["10-K", "10-Q", "8-K"]
     filings: list[SECFiling] = []
+    evidence: list[DriverEvidence] = []
+
+    # Foreign / non-US-listed entities never have EDGAR results — emit the
+    # explicit no-filings evidence and skip the network call entirely.
+    if entity_name and entity_name.lower() in NON_US_LISTED:
+        return [], [no_us_filing_evidence(entity_name, ticker)]
+
+    if not ticker:
+        return [], [no_us_filing_evidence(entity_name or entity_id, ticker)]
 
     cik = await get_cik_for_ticker(ticker, user_agent)
     if not cik:
         logger.info(f"No CIK found for ticker {ticker}")
-        return []
+        return [], [no_us_filing_evidence(entity_name or ticker, ticker)]
 
     url = f"{EDGAR_SUBMISSIONS_URL}/CIK{cik}.json"
     async with httpx.AsyncClient(timeout=20, headers={"User-Agent": user_agent}) as client:
@@ -125,7 +158,7 @@ async def fetch_recent_filings(
                 if accession_number:
                     filing_url = f"https://www.sec.gov/edgar/search/#/q={accession_number}"
 
-                filings.append(SECFiling(
+                filing = SECFiling(
                     entity_id=entity_id,
                     form_type=form,
                     filed_at=filed_at,
@@ -133,11 +166,17 @@ async def fetch_recent_filings(
                     description=f"{form} filing — {date_list[i] if i < len(date_list) else 'unknown'}",
                     risk_flags=flags,
                     url=filing_url,
-                ))
+                )
+                filings.append(filing)
+                evidence.append(build_filing_evidence(filing))
                 count += 1
 
         except Exception as e:
             logger.warning(f"EDGAR fetch failed for CIK {cik} ({ticker}): {e}")
 
+    # A US-listed entity that returned no filings still gets an explicit entry.
+    if not evidence:
+        evidence.append(no_us_filing_evidence(entity_name or ticker, ticker))
+
     logger.info(f"Fetched {len(filings)} SEC filings for {ticker}")
-    return filings
+    return filings, evidence

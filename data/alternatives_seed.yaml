@@ -1,0 +1,88 @@
+# Pre-vetted alternative-vendor candidates, keyed by industry (G2).
+# Every distinct industry value present in the current Apple graph has an entry
+# so no node is left with an empty alternatives list. These are starting
+# candidates; the LLM ranks and justifies them per-entity given its risk drivers.
+#
+# Industries are sourced from MOCK_WATCHLISTS["apple inc"] in src/llm/mock_client.py
+# and the synthetic vendor registry.
+
+Semiconductor Fabrication:
+  - Samsung Foundry
+  - GlobalFoundries
+  - Intel Foundry
+  - SMIC
+
+Contract Electronics Manufacturing:
+  - Pegatron
+  - Wistron
+  - Compal
+  - Flex Ltd
+
+Contract Manufacturing:
+  - Pegatron
+  - Wistron
+  - Compal
+  - Flex Ltd
+
+Memory & Display:
+  - Micron
+  - SK Hynix
+  - Kioxia
+  - Japan Display
+
+Wireless Chips:
+  - Qualcomm
+  - MediaTek
+  - Marvell
+  - Intel
+
+Lithography Equipment:
+  - Nikon
+  - Canon
+  - Ultratech
+
+Semiconductor Equipment:
+  - Lam Research
+  - KLA Corporation
+  - Tokyo Electron
+
+Silicon Wafers:
+  - Sumco
+  - Siltronic
+  - SK Siltron
+  - GlobalWafers
+
+Specialty Glass:
+  - AGC Inc
+  - Nippon Electric Glass
+  - Schott
+
+IP Licensing:
+  - MIPS Technologies
+  - Imagination Technologies
+  - Tensilica
+
+Telecommunications:
+  - Verizon
+  - T-Mobile
+  - Deutsche Telekom
+  - Vodafone
+
+E-Commerce / Cloud:
+  - Microsoft Azure
+  - Google Cloud
+  - Alibaba Cloud
+
+Search & Advertising:
+  - Microsoft Bing Ads
+  - Meta Audience Network
+
+Investment / Telecommunications:
+  - KKR
+  - Sequoia Capital
+  - Vision Fund alternatives
+
+Industrial Gases:
+  - Air Liquide
+  - Messer Group
+  - Air Products

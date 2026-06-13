@@ -10,20 +10,18 @@ from typing import Optional
 
 import httpx
 
-from src.models import NewsItem, SourceProvenanceAnchor
+from src.models import NewsItem, DriverEvidence
 
 logger = logging.getLogger(__name__)
 
 
-def build_news_anchor(item: NewsItem, index: int = 0) -> SourceProvenanceAnchor:
-    """Build a provenance anchor for a single news headline."""
-    return SourceProvenanceAnchor(
-        anchor_key=f"[NEWS-{item.published_at.strftime('%Y-%m-%d')}-{index}]",
-        source_name=item.source or "News wire",
+def build_news_evidence(item: NewsItem, index: int = 0) -> DriverEvidence:
+    """Build a DriverEvidence for a single news headline."""
+    return DriverEvidence(
+        label=f"{item.source or 'News wire'}: {item.title[:200]}",
         source_url=item.url or "",
-        section_reference="Headline",
-        extracted_at=datetime.utcnow(),
-        verbatim_snippet=item.title[:240],
+        retrieved_at=datetime.utcnow(),
+        value=item.published_at.strftime("%Y-%m-%d"),
     )
 
 # ── Sentiment word lists (lightweight, no model needed locally) ────────────────
@@ -112,6 +110,72 @@ async def fetch_gdelt_news(
         except Exception as e:
             logger.warning(f"GDELT fetch failed for '{entity_name}': {e}")
     return items
+
+
+# ── GDELT geopolitical events, keyed and cached per country (F1) ──────────────
+# Geopolitical risk is a property of the *jurisdiction*, not the individual
+# vendor — so we fetch once per hq_country and cache, regardless of how many
+# vendors sit in that country. Returns DriverEvidence built inline at fetch time.
+
+_GDELT_COUNTRY_CACHE: dict[str, list[DriverEvidence]] = {}
+
+# Human-readable country names + a geopolitical query slant for the GDELT search.
+_COUNTRY_QUERY: dict[str, str] = {
+    "TW": "Taiwan", "CN": "China", "KR": "South Korea", "JP": "Japan",
+    "US": "United States", "NL": "Netherlands", "GB": "United Kingdom",
+    "IE": "Ireland", "DE": "Germany", "IN": "India", "MX": "Mexico",
+}
+_GEO_TERMS = "(sanctions OR tariff OR export control OR trade restriction OR conflict)"
+
+
+async def fetch_gdelt_country_events(
+    country_iso2: str,
+    days_back: int = 30,
+    max_articles: int = 5,
+) -> list[DriverEvidence]:
+    """
+    Fetch recent geopolitical events for a country (cached per ISO-2 code).
+    Each material event becomes a DriverEvidence with the GDELT article URL.
+    """
+    if not country_iso2:
+        return []
+    if country_iso2 in _GDELT_COUNTRY_CACHE:
+        return _GDELT_COUNTRY_CACHE[country_iso2]
+
+    name = _COUNTRY_QUERY.get(country_iso2, country_iso2)
+    params = {
+        "query": f'"{name}" {_GEO_TERMS} sourcelang:english',
+        "mode": "artlist",
+        "maxrecords": max_articles,
+        "format": "json",
+        "timespan": f"{days_back}d",
+    }
+    evidence: list[DriverEvidence] = []
+    async with httpx.AsyncClient(timeout=20) as client:
+        try:
+            resp = await client.get(GDELT_URL, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            for art in data.get("articles", [])[:max_articles]:
+                title = art.get("title", "")
+                if not title:
+                    continue
+                pub_str = art.get("seendate", "")
+                try:
+                    pub_dt = datetime.strptime(pub_str[:14], "%Y%m%dT%H%M%S")
+                except Exception:
+                    pub_dt = datetime.utcnow()
+                evidence.append(DriverEvidence(
+                    label=f"GDELT ({name}): {title[:180]}",
+                    source_url=art.get("url", ""),
+                    retrieved_at=datetime.utcnow(),
+                    value=pub_dt.strftime("%Y-%m-%d"),
+                ))
+        except Exception as e:
+            logger.warning(f"GDELT country fetch failed for '{name}': {e}")
+
+    _GDELT_COUNTRY_CACHE[country_iso2] = evidence
+    return evidence
 
 
 # ── NewsAPI client (optional key) ─────────────────────────────────────────────

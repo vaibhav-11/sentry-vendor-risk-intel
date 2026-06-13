@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     output_dir: Path = ROOT_DIR / "data" / "outputs"
     cache_dir: Path = ROOT_DIR / "data" / "cache"
     synthetic_data_path: Path = ROOT_DIR / "data" / "synthetic" / "vendor_registry.json"
+    alternatives_seed_path: Path = ROOT_DIR / "data" / "alternatives_seed.yaml"
 
     # ── Risk Scoring Weights ──────────────────────────────────────────────────
     risk_weights_path: Path = ROOT_DIR / "config" / "risk_weights.yaml"

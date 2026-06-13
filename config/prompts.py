@@ -58,12 +58,47 @@ Internal Vendor Data:
 Risk Score: {risk_score}/100 (Financial: {fin_score}, Operational: {ops_score},
 Compliance: {comp_score}, Geopolitical: {geo_score})
 
+Financial Drivers (derived from financial metrics — narrate from these, do not invent):
+{financial_drivers}
+
+Operational Drivers (derived from the internal vendor record — narrate from these):
+{operational_drivers}
+
+Compliance Drivers (derived from SEC EDGAR evidence — narrate from these, do not invent):
+{compliance_drivers}
+
+Geopolitical Drivers (country-risk index, portfolio HHI, GDELT events — narrate from these):
+{geopolitical_drivers}
+
 Write a concise 3-paragraph risk narrative (max 200 words total):
 1. Current risk status and primary drivers
 2. Key vulnerabilities and early warning signals observed
 3. Recommended mitigation actions
 
-Be specific. Reference actual data points provided above."""
+Be specific. Reference the actual data points and drivers provided above. Do not
+fabricate filings, events, or metrics that are not listed."""
+
+# ── Pre-vetted Alternatives Ranking (G2) ──────────────────────────────────────
+
+ALTERNATIVES_PROMPT = """You are ranking pre-vetted alternative vendors for a supply-chain
+risk team considering contingency sourcing.
+
+Primary vendor at risk: {entity_name} ({industry}, HQ {hq_country})
+Composite risk score: {risk_score}/100
+Key risk drivers for the primary vendor:
+{risk_drivers}
+
+Candidate alternative vendors (same industry):
+{candidates}
+
+Rank the candidates from most to least suitable as a contingency given the SPECIFIC
+risk drivers above. For each, write exactly one sentence justifying its rank in this
+risk context.
+
+Return ONLY valid JSON, an array, best first:
+[
+  {{"name": "Candidate Name", "justification": "one sentence on fit given the risk context"}}
+]"""
 
 # ── Alert Generation ──────────────────────────────────────────────────────────
 

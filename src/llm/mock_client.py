@@ -68,7 +68,7 @@ MOCK_WATCHLISTS: dict[str, list[dict]] = {
          "importance_score": 7, "industry": "Silicon Wafers",
          "hq_country": "JP"},
         # Level 2 — Foxconn suppliers
-        {"name": "Pegatron", "ticker": None, "entity_type": "supplier",
+        {"name": "Pegatron", "ticker": "4938.TW", "entity_type": "supplier",
          "relationship_to_parent": "Foxconn", "depth_level": 2,
          "importance_score": 6, "industry": "Contract Manufacturing",
          "hq_country": "TW"},
@@ -113,26 +113,96 @@ MOCK_WATCHLISTS: dict[str, list[dict]] = {
 
 # ── Mock narrative templates ───────────────────────────────────────────────────
 
-def _mock_narrative(entity_name: str, risk_score: float) -> str:
+def _parse_driver_block(prompt: str, header_prefix: str) -> list[str]:
+    """
+    Extract the bullet lines that follow a labelled driver block in the narrative
+    prompt (e.g. "Financial Drivers (...):" then "- driver one"). Stops at the
+    first blank line after the block begins. Returns the driver strings (no "- ").
+    """
+    drivers: list[str] = []
+    in_block = False
+    for line in prompt.split("\n"):
+        stripped = line.strip()
+        if stripped.lower().startswith(header_prefix.lower()):
+            in_block = True
+            continue
+        if in_block:
+            if stripped.startswith("-"):
+                drivers.append(stripped.lstrip("- ").strip())
+            elif stripped == "":
+                break
+    # Drop only the explicit "No <dimension> drivers recorded" placeholder lines
+    # (keep genuine drivers that happen to start with "No", e.g. "No alternate
+    # vendor currently available").
+    return [d for d in drivers if d and not d.lower().endswith("drivers recorded")]
+
+
+def _mock_narrative(
+    entity_name: str,
+    risk_score: float,
+    fin_drivers: list[str],
+    ops_drivers: list[str],
+    comp_drivers: list[str],
+    geo_drivers: list[str],
+) -> str:
+    """
+    Build a vendor-specific narrative by interpolating the *actual* driver strings
+    received in the prompt — not a canned generic line. Each narrative references
+    the entity name, composite score, and at least one financial, operational, and
+    geopolitical/compliance driver, so every entity's narrative is distinguishable.
+    """
     if risk_score >= 75:
         level = "elevated"
-        driver = "significant financial stress indicators and operational concentration risks"
-        action = "Immediate engagement with procurement leadership to evaluate contingency suppliers"
+        action = ("Immediate engagement with procurement leadership to evaluate "
+                  "contingency suppliers and request updated continuity documentation")
     elif risk_score >= 50:
         level = "moderate"
-        driver = "geopolitical exposure and limited supply chain redundancy"
-        action = "Schedule quarterly business review and request updated business continuity documentation"
+        action = ("Schedule a quarterly business review and request updated business "
+                  "continuity and financial disclosures")
     else:
         level = "manageable"
-        driver = "stable financial position and diversified customer base"
-        action = "Maintain standard monitoring cadence with annual vendor assessment"
+        action = "Maintain standard monitoring cadence with an annual vendor assessment"
+
+    # Surface up to the two strongest financial signals (e.g. Z-score + revenue
+    # growth) verbatim so acronyms like "Altman Z-Score" / country codes are never
+    # case-mangled. Drivers are quoted as-is, joined with semicolons.
+    fin = "; ".join(fin_drivers[:2]) if fin_drivers else None
+    ops = ops_drivers[0] if ops_drivers else None
+    # Prefer the most *specific* geopolitical driver (cross-strait / export-control
+    # exposure) over the generic country-risk baseline; fall back to compliance.
+    geo = None
+    if geo_drivers:
+        specific = [d for d in geo_drivers if "country risk index" not in d.lower()]
+        geo = specific[0] if specific else geo_drivers[0]
+    third = geo or (comp_drivers[0] if comp_drivers else None)
+
+    # Opening: status + the financial signals we actually have.
+    if fin:
+        opening = (
+            f"{entity_name} presents {level} third-party risk (composite {risk_score:.0f}/100). "
+            f"Financial signals — {fin}."
+        )
+    else:
+        opening = (
+            f"{entity_name} presents {level} third-party risk (composite {risk_score:.0f}/100), "
+            f"with limited financial telemetry available for this cycle."
+        )
+
+    # Middle: operational and geo/compliance specifics, quoted verbatim.
+    middle_bits: list[str] = []
+    if ops:
+        middle_bits.append(f"operationally, {ops}")
+    if third:
+        middle_bits.append(third)
+    middle = (
+        ("On the supply side: " + "; ".join(middle_bits) + ".")
+        if middle_bits else
+        "No additional operational or geopolitical flags were raised this cycle."
+    )
 
     return (
-        f"{entity_name} presents {level} third-party risk (score: {risk_score:.0f}/100), "
-        f"driven primarily by {driver}. "
-        f"Recent data signals warrant continued monitoring but no immediate escalation. "
-        f"The vendor's operational profile shows concentration in key manufacturing regions "
-        f"with limited near-term diversification plans. "
+        f"{opening} {middle} "
+        f"These signals are specific to {entity_name} and warrant proportionate attention. "
         f"Recommendation: {action}."
     )
 
@@ -149,6 +219,38 @@ def _mock_alert_json(entity_name: str, score: float) -> str:
         "escalate_to": "CPO",
         "time_sensitivity": "24h" if score >= 80 else "1-week",
     })
+
+
+def _mock_alternatives_json(prompt: str) -> str:
+    """
+    Mock ranked-alternatives response (G2). Extracts the candidate list from the
+    prompt and returns a realistic ranked, justified JSON array so the mock path
+    populates node.meta.backups end-to-end.
+    """
+    candidates: list[str] = []
+    in_block = False
+    for line in prompt.split("\n"):
+        stripped = line.strip()
+        if stripped.lower().startswith("candidate alternative vendors"):
+            in_block = True
+            continue
+        if in_block:
+            if stripped.startswith("-"):
+                candidates.append(stripped.lstrip("- ").strip())
+            elif stripped == "" and candidates:
+                break
+
+    justifications = [
+        "Strongest capacity and qualification overlap for rapid contingency switch.",
+        "Credible second source with comparable technical scope but longer ramp time.",
+        "Viable fallback; geographic diversification reduces correlated regional risk.",
+        "Backup option — qualification effort higher, hold as tertiary contingency.",
+    ]
+    ranked = [
+        {"name": name, "justification": justifications[min(i, len(justifications) - 1)]}
+        for i, name in enumerate(candidates)
+    ]
+    return json.dumps(ranked, indent=2)
 
 
 def _mock_report_html(target: str, entity_count: int, critical_count: int) -> str:
@@ -212,6 +314,10 @@ class MockLLMClient(BaseLLMClient):
     ) -> str:
         await asyncio.sleep(0.05)   # simulate small latency
         prompt_lower = prompt.lower()
+
+        # ── Alternatives ranking (G2) ──────────────────────────────────────
+        if "rank the candidates" in prompt_lower or "alternative vendors" in prompt_lower:
+            return _mock_alternatives_json(prompt)
 
         # ── Watchlist ──────────────────────────────────────────────────────
         if "watchlist" in prompt_lower or "supply chain" in prompt_lower and "json" in prompt_lower:
@@ -297,7 +403,16 @@ class MockLLMClient(BaseLLMClient):
                     risk_score = float(line.split(":")[1].split("/")[0].strip())
                 except Exception:
                     pass
-        return _mock_narrative(entity_name, risk_score)
+        # Fix 3: interpolate the *actual* drivers the prompt carries so each
+        # narrative is specific to its vendor rather than a canned generic string.
+        fin_drivers  = _parse_driver_block(prompt, "Financial Drivers")
+        ops_drivers  = _parse_driver_block(prompt, "Operational Drivers")
+        comp_drivers = _parse_driver_block(prompt, "Compliance Drivers")
+        geo_drivers  = _parse_driver_block(prompt, "Geopolitical Drivers")
+        return _mock_narrative(
+            entity_name, risk_score,
+            fin_drivers, ops_drivers, comp_drivers, geo_drivers,
+        )
 
     async def generate_batch(
         self,

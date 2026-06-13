@@ -111,13 +111,17 @@ class SECFiling(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     url: Optional[str] = None
 
-class SourceProvenanceAnchor(BaseModel):
-    anchor_key: str          # e.g., "[SEC-10K-2026]", "[NEWS-2026-06-11]"
-    source_name: str         # e.g., "SEC EDGAR", "Bloomberg News"
-    source_url: str
-    section_reference: str   # e.g., "Item 1A. Risk Factors"
-    extracted_at: datetime = Field(default_factory=datetime.utcnow)
-    verbatim_snippet: str    # Verbatim text fragment for side-by-side UI view
+class DriverEvidence(BaseModel):
+    """
+    Unified, URL-bearing provenance primitive (E1). Captured inline at fetch time
+    (footprint agent / data sources) and at score time (scorer dimensions), and
+    consumed at render time (dashboard inspector). Replaces the former
+    SourceProvenanceAnchor — one provenance type everywhere.
+    """
+    label: str                          # human-readable claim string rendered in the UI
+    source_url: str                     # direct link: SEC filing, GDELT article, yfinance ref
+    retrieved_at: datetime = Field(default_factory=datetime.utcnow)
+    value: Optional[str] = None         # raw value that produced the label
 
 class MathematicalLineage(BaseModel):
     # Risk-scaled VaR model (B1): VaR_total = direct_VaR + cascade_VaR, where
@@ -182,7 +186,13 @@ class FootprintData(BaseModel):
     news_sentiment_avg: float = 0.0
     negative_news_count: int = 0
     risk_news_headlines: list[str] = Field(default_factory=list)
-    provenance_anchors: dict[str, SourceProvenanceAnchor] = Field(default_factory=dict)
+    provenance_anchors: dict[str, DriverEvidence] = Field(default_factory=dict)
+    # E2/F1: evidence captured inline at fetch time, consumed by the scorer to
+    # build deterministic, attributed compliance/geopolitical dimension scores.
+    sec_evidence: list[DriverEvidence] = Field(default_factory=list)
+    geo_events: list[DriverEvidence] = Field(default_factory=list)
+    # Issue 5: per-metric financial provenance (Altman Z, rev growth, D/E, current ratio).
+    fin_evidence: list[DriverEvidence] = Field(default_factory=list)
 
 
 # ── Risk Scoring ──────────────────────────────────────────────────────────────
@@ -192,6 +202,9 @@ class DimensionScore(BaseModel):
     confidence: float = Field(ge=0, le=1, default=0.8)
     key_drivers: list[str] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
+    # E1: structured, URL-bearing form of the drivers consumed by the UI.
+    # key_drivers is kept for backwards compatibility (plain strings).
+    evidence: list[DriverEvidence] = Field(default_factory=list)
 
 
 class RiskScore(BaseModel):
@@ -204,8 +217,11 @@ class RiskScore(BaseModel):
     compliance: DimensionScore
     geopolitical: DimensionScore
     scored_at: datetime = Field(default_factory=datetime.utcnow)
-    score_delta_7d: Optional[float] = None        
-    narrative: str = ""                           
+    score_delta_7d: Optional[float] = None
+    narrative: str = ""
+    # G2: ranked, justified pre-vetted alternative vendors. Each item:
+    # {"name": str, "justification": str}. Populated by the risk agent post-scoring.
+    backups: list[dict] = Field(default_factory=list)
 
 
 # ── Graph / Cascade Risk ──────────────────────────────────────────────────────

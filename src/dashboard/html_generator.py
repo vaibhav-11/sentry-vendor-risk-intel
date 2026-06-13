@@ -63,10 +63,12 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
         size      = TARGET_NODE_SIZE if is_target else _node_size_for_spend(spend)
 
         var_val = 0.0
+        is_spof = False
         lineage_payload = {}
         if ps.graph_metrics and entity.id in ps.graph_metrics.node_metrics:
             nm_data = ps.graph_metrics.node_metrics[entity.id]
             var_val = nm_data.value_at_risk_usd
+            is_spof = nm_data.is_single_point_of_failure
             if nm_data.mathematical_lineage:
                 lineage_payload = nm_data.mathematical_lineage.model_dump()
 
@@ -113,10 +115,30 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
 
                 "fin_drivers": score_obj.financial.key_drivers if score_obj else [],
                 "ops_drivers": score_obj.operational.key_drivers if score_obj else [],
+                "comp_drivers": score_obj.compliance.key_drivers if score_obj else [],
+                "geo_drivers": score_obj.geopolitical.key_drivers if score_obj else [],
+
+                # C1: data gaps per dimension (surfaced explicitly, never silent default)
+                "fin_gaps": score_obj.financial.data_gaps if score_obj else [],
+                "ops_gaps": score_obj.operational.data_gaps if score_obj else [],
+                "comp_gaps": score_obj.compliance.data_gaps if score_obj else [],
+                "geo_gaps": score_obj.geopolitical.data_gaps if score_obj else [],
+
+                # E3/F2/C2: structured, URL-bearing evidence per dimension
+                "fin_evidence": [e.model_dump() for e in score_obj.financial.evidence] if score_obj else [],
+                "comp_evidence": [e.model_dump() for e in score_obj.compliance.evidence] if score_obj else [],
+                "geo_evidence": [e.model_dump() for e in score_obj.geopolitical.evidence] if score_obj else [],
+
+                # G2: ranked, justified pre-vetted alternative vendors
+                "backups": score_obj.backups if score_obj else [],
+
+                # C1: dimension weights for the inspector breakdown
+                "weights": {"fin": 30, "ops": 30, "comp": 20, "geo": 20},
 
                 "annual_spend_usd": round(spend, 2),
                 "importance":  entity.importance_score,
                 "is_target":   is_target,
+                "is_spof":     is_spof,
                 "value_at_risk": var_val,
                 "mathematical_lineage": lineage_payload,
                 "provenance_anchors": provenance_payload
@@ -248,13 +270,23 @@ def _build_freshness_panel(ps: PipelineState) -> dict:
     """
     now = datetime.utcnow()
 
-    # ── Per-source retrieval timestamps (latest extracted_at per source_name) ──
+    # ── Per-source retrieval timestamps (latest retrieved_at per source group) ──
+    # DriverEvidence carries no source_name, so group by the anchor-key prefix
+    # ("financials", "sec", "news", "geo") which maps cleanly to a data source.
+    _SOURCE_LABELS = {
+        "financials": "Yahoo Finance (financials)",
+        "sec": "SEC EDGAR (filings)",
+        "news": "GDELT / News wire",
+        "geo": "GDELT (geopolitical events)",
+    }
     latest_by_source: dict[str, datetime] = {}
     for fp in ps.footprint_data.values():
-        for anchor in fp.provenance_anchors.values():
-            ts = anchor.extracted_at
-            if anchor.source_name not in latest_by_source or ts > latest_by_source[anchor.source_name]:
-                latest_by_source[anchor.source_name] = ts
+        for key, anchor in fp.provenance_anchors.items():
+            prefix = key.split(".")[0]
+            source = _SOURCE_LABELS.get(prefix, prefix.title())
+            ts = anchor.retrieved_at
+            if source not in latest_by_source or ts > latest_by_source[source]:
+                latest_by_source[source] = ts
 
     sources = [
         {

@@ -9,9 +9,10 @@ import logging
 from typing import Any
 
 from src.models import PipelineState, RiskAlert, AlertSeverity
-from src.risk.scorer import score_all_entities
+from src.risk.scorer import score_all_entities, attach_geo_hhi_evidence
 from src.graph.supply_chain_graph import build_graph, attach_risk_scores, entities_to_relationships
 from src.graph.cascading_risk import compute_graph_metrics
+from src.risk.alternatives import attach_alternatives
 from src.llm.interface import get_llm_client
 from config.prompts import (
     SYSTEM_RISK_ANALYST, ENTITY_NARRATIVE_PROMPT, ALERT_PROMPT
@@ -97,6 +98,18 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
     G = attach_risk_scores(G, ps.risk_scores)
     ps.graph_metrics = compute_graph_metrics(G, ps.risk_scores, footprint_data=ps.footprint_data)
 
+    # ── 2b. F1: append portfolio-HHI evidence to each node's geo dimension ──
+    # HHI needs the full portfolio, so it's only available post-graph-metrics.
+    attach_geo_hhi_evidence(
+        ps.risk_scores,
+        supply_chain_entities,
+        ps.graph_metrics.geo_concentration_hhi,
+        ps.graph_metrics.country_spend_distribution,
+    )
+
+    # ── 2c. G2: rank pre-vetted alternatives into each node's backups via LLM ──
+    await attach_alternatives(ps, llm)
+
     # ── 3. Batch LLM: generate risk narratives for all scored entities ─────
     logger.info(f"[Risk] Generating narratives for {len(ps.risk_scores)} entities via LLM")
 
@@ -146,6 +159,18 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
             ops_score=score.operational.score,
             comp_score=score.compliance.score,
             geo_score=score.geopolitical.score,
+            financial_drivers="\n".join(
+                f"- {d}" for d in score.financial.key_drivers
+            ) or "- No financial drivers recorded",
+            operational_drivers="\n".join(
+                f"- {d}" for d in score.operational.key_drivers
+            ) or "- No operational drivers recorded",
+            compliance_drivers="\n".join(
+                f"- {d}" for d in score.compliance.key_drivers
+            ) or "- No compliance drivers recorded",
+            geopolitical_drivers="\n".join(
+                f"- {d}" for d in score.geopolitical.key_drivers
+            ) or "- No geopolitical drivers recorded",
         )
         narrative_prompts.append(prompt)
         narrative_entity_ids.append(entity_id)

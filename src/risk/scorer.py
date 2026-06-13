@@ -7,11 +7,12 @@ All logic is pure Python/NumPy — no GPU required.
 
 import logging
 import yaml
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from src.models import (
-    Entity, FootprintData, RiskScore, DimensionScore, RiskLevel
+    Entity, FootprintData, RiskScore, DimensionScore, RiskLevel, DriverEvidence,
 )
 from config.settings import settings
 
@@ -27,6 +28,17 @@ COUNTRY_RISK: dict[str, float] = {
     "CH": 9,  "IL": 38, "SA": 42, "AE": 30, "VN": 48,
 }
 DEFAULT_COUNTRY_RISK = 40.0  # Unknown country
+
+# ── Compliance scoring constants (E2) ─────────────────────────────────────────
+# Deterministic compliance scoring driven by SEC EDGAR evidence rather than
+# magic numbers. Higher = more compliance risk.
+COMPLIANCE_BASELINE      = 45.0   # neutral starting point before evidence adjusts it
+RECENT_10K_CREDIT        = 18.0   # a recent annual report is a good-governance signal
+RECENT_8K_PENALTY        = 8.0    # each recent 8-K (material event) nudges risk up
+NO_FILINGS_DEFAULT       = 45.0   # no resolvable filings (e.g. non-US-listed) — not a failure,
+                                  # just absence of SEC filings; must not outscore US entities
+                                  # that carry active filing flags purely due to absent filings
+EIGHT_K_LOOKBACK_DAYS    = 90
 
 # ── OFAC / Sanctions watchlist (illustrative — check real OFAC in production) ──
 SANCTIONED_COUNTRIES = {"RU", "IR", "KP", "BY", "SY", "CU", "SD", "VE"}
@@ -309,6 +321,7 @@ def _score_financial(fp: FootprintData) -> DimensionScore:
         confidence=round(confidence, 2),
         key_drivers=drivers,  # Send the full array of actual metrics down the pipeline
         data_gaps=gaps,
+        evidence=list(fp.fin_evidence),  # Issue 5: per-metric URL-bearing provenance
     )
 
 
@@ -367,6 +380,11 @@ def _score_operational(entity: Entity, fp: FootprintData) -> DimensionScore:
             drivers.append(f"{internal.incidents_last_12m} incidents in last 12 months")
         elif internal.incidents_last_12m > 0:
             points.append(40.0)
+
+        # G1: a clean bill of health is itself evidence — state it explicitly
+        # rather than emitting an empty driver list (e.g. Samsung Electronics).
+        if not drivers:
+            drivers.append("No operational flags — vendor meets all monitored thresholds")
     else:
         gaps.append("No internal vendor record — using entity-level proxies")
         # Fall back to entity-level signals
@@ -375,6 +393,8 @@ def _score_operational(entity: Entity, fp: FootprintData) -> DimensionScore:
             drivers.append("High-importance entity with no internal spend data")
         else:
             points.append(40.0)
+        # G1: make the gap explicit rather than silent.
+        drivers.append("No internal vendor record — operational score set to default")
 
     score    = round(sum(points) / len(points), 1) if points else 50.0
     confidence = 0.9 if internal else 0.4
@@ -390,64 +410,109 @@ def _score_operational(entity: Entity, fp: FootprintData) -> DimensionScore:
 # ── Compliance Dimension ──────────────────────────────────────────────────────
 
 def _score_compliance(entity: Entity, fp: FootprintData) -> DimensionScore:
+    """
+    Deterministic compliance scoring driven by SEC EDGAR evidence (E2).
+
+    Every branch appends a DriverEvidence so the score is fully attributable:
+      - recent 10-K present  → baseline reduced (good governance signal)
+      - 8-K filings in last 90 days → score nudged up per filing (material events)
+      - no filings found     → NO_FILINGS_DEFAULT, explicit no-US-filings evidence
+    Sanctions and internal-certification signals layer on top, each cited.
+    """
     drivers: list[str] = []
     gaps: list[str] = []
-    points: list[float] = []
+    evidence: list[DriverEvidence] = list(fp.sec_evidence)  # already URL-bearing, inline
 
-    # Sanctions check (country-level)
-    if entity.hq_country in SANCTIONED_COUNTRIES:
-        points.append(95.0)
-        drivers.append(f"HQ country {entity.hq_country} on sanctions list")
-
-    # Internal compliance data
-    internal = fp.internal_record
-    if internal:
-        # Certification gaps
-        expected_certs = {"ISO27001", "SOC2"}
-        actual_certs   = set(internal.compliance_certifications)
-        missing        = expected_certs - actual_certs
-        if missing:
-            pts = 60.0 if len(missing) == 2 else 35.0
-            points.append(pts)
-            drivers.append(f"Missing certifications: {', '.join(missing)}")
-        else:
-            points.append(10.0)
-
-        # GDPR DPA
-        if not internal.gdpr_dpa_signed:
-            points.append(55.0)
-            drivers.append("GDPR Data Processing Agreement not signed")
-        else:
-            points.append(5.0)
-    else:
-        gaps.append("No internal compliance record")
-        points.append(40.0)
-
-    # SEC filing risk flags
+    sec_ev = fp.sec_evidence
+    has_real_filings = any(ev.value not in ("non-us-listed", None) for ev in sec_ev)
+    has_10k = any((ev.value or "").upper() == "10-K" for ev in sec_ev)
+    recent_8k = sum(
+        1 for ev in sec_ev
+        if (ev.value or "").upper() == "8-K"
+        and (datetime.utcnow() - ev.retrieved_at).days <= EIGHT_K_LOOKBACK_DAYS
+    )
     all_flags = [flag for f in fp.sec_filings for flag in f.risk_flags]
+
+    # ── SEC-driven base score ──────────────────────────────────────────────
+    if not has_real_filings:
+        # Absence of US filings is NOT a compliance failure — it is the neutral
+        # default. We deliberately cap the entire no-filings branch at this value
+        # (Issue 4): a non-US-listed entity must never outscore a US entity that
+        # carries active SEC filing flags purely because it doesn't file here.
+        score = NO_FILINGS_DEFAULT
+        drivers.append("No SEC filings on record (non-US-listed or unmatched entity)")
+        gaps.append("No US securities filings — compliance inferred from other signals")
+    else:
+        score = COMPLIANCE_BASELINE
+        # The 10-K credit is a *clean* governance signal — only award it when the
+        # filing carries no risk flags. A flagged 10-K is not a clean bill.
+        if has_10k and not all_flags:
+            score -= RECENT_10K_CREDIT
+            drivers.append("Recent 10-K on file, no flags — annual disclosure clean")
+        elif has_10k:
+            drivers.append("Recent 10-K on file (carries risk flags — see below)")
+        if recent_8k:
+            score += RECENT_8K_PENALTY * recent_8k
+            drivers.append(f"{recent_8k} 8-K material-event filing(s) in last 90 days")
+
+    # ── SEC risk flags from filing content ─────────────────────────────────
     if "going concern" in all_flags or "material weakness" in all_flags:
-        points.append(80.0)
+        score += 30.0
         drivers.append(f"SEC filing flags: {', '.join(set(all_flags[:2]))}")
     elif all_flags:
-        points.append(45.0)
+        score += 12.0
         drivers.append(f"SEC filing flags: {all_flags[0]}")
 
-    score      = round(sum(points) / len(points), 1) if points else 30.0
-    confidence = 0.85 if internal else 0.5
+    # ── Internal certification / GDPR signals ──────────────────────────────
+    internal = fp.internal_record
+    if internal:
+        expected_certs = {"ISO27001", "SOC2"}
+        missing = expected_certs - set(internal.compliance_certifications)
+        if missing:
+            score += 10.0 if len(missing) == 2 else 5.0
+            drivers.append(f"Missing certifications: {', '.join(sorted(missing))}")
+        if not internal.gdpr_dpa_signed:
+            score += 6.0
+            drivers.append("GDPR Data Processing Agreement not signed")
+    else:
+        gaps.append("No internal compliance record")
+
+    # Issue 4: hard ceiling on the no-filings path so absence of SEC filings
+    # (even with cert/GDPR gaps) cannot exceed a US filer carrying active flags.
+    # Applied BEFORE sanctions so a sanctioned non-filer still scores critically.
+    if not has_real_filings:
+        score = min(score, NO_FILINGS_DEFAULT)
+
+    # ── Sanctions check (country-level) — never capped ─────────────────────
+    if entity.hq_country in SANCTIONED_COUNTRIES:
+        score += 40.0
+        drivers.append(f"HQ country {entity.hq_country} on sanctions list")
+
+    score      = round(max(0.0, min(100.0, score)), 1)
+    confidence = 0.85 if has_real_filings else 0.55
 
     return DimensionScore(
         score=score,
         confidence=confidence,
-        key_drivers=drivers[:3],
+        key_drivers=drivers[:4],
         data_gaps=gaps,
+        evidence=evidence,
     )
 
 
 # ── Geopolitical Dimension ────────────────────────────────────────────────────
 
 def _score_geopolitical(entity: Entity, fp: FootprintData) -> DimensionScore:
+    """
+    Deterministic geopolitical scoring (F1). Always emits at minimum:
+      (1) a country-risk baseline DriverEvidence explaining the index value,
+      (2) any GDELT event entries fetched for the entity's country.
+    The portfolio-HHI contribution is appended later by attach_geo_hhi_evidence()
+    once the graph metrics are computed (HHI needs the full portfolio).
+    """
     drivers: list[str] = []
     gaps: list[str] = []
+    evidence: list[DriverEvidence] = []
 
     country = entity.hq_country or (
         fp.internal_record.geographic_risk_country if fp.internal_record else ""
@@ -456,10 +521,20 @@ def _score_geopolitical(entity: Entity, fp: FootprintData) -> DimensionScore:
     country = normalize_country(country)
     country_risk = COUNTRY_RISK.get(country, DEFAULT_COUNTRY_RISK)
 
-    if country_risk > 60:
-        drivers.append(f"High-risk jurisdiction: {country} (risk index {country_risk:.0f})")
-    elif country_risk > 35:
-        drivers.append(f"Elevated-risk jurisdiction: {country} (risk index {country_risk:.0f})")
+    # (1) Country-risk baseline — ALWAYS emitted, even for low-risk jurisdictions.
+    band = (
+        "elevated geopolitical exposure" if country_risk > 60
+        else "moderate geopolitical exposure" if country_risk > 35
+        else "low geopolitical exposure"
+    )
+    baseline_label = f"{country or 'Unknown'} country risk index: {country_risk:.0f}/100 — {band}"
+    drivers.append(baseline_label)
+    evidence.append(DriverEvidence(
+        label=baseline_label,
+        source_url="https://www.baselgovernance.org/basel-aml-index",
+        retrieved_at=datetime.utcnow(),
+        value=f"{country_risk:.0f}",
+    ))
 
     # Taiwan / China specific — key for semiconductor supply chains
     trade_war_bonus = 0.0
@@ -478,14 +553,50 @@ def _score_geopolitical(entity: Entity, fp: FootprintData) -> DimensionScore:
         gaps.append("HQ country unknown — using default risk score")
         score = DEFAULT_COUNTRY_RISK
 
+    # (2) GDELT country events captured at fetch time.
+    evidence.extend(fp.geo_events[:3])
+
     confidence = 0.75 if country else 0.4
 
     return DimensionScore(
         score=score,
         confidence=confidence,
-        key_drivers=drivers[:3],
+        key_drivers=drivers[:4],
         data_gaps=gaps,
+        evidence=evidence,
     )
+
+
+def attach_geo_hhi_evidence(
+    risk_scores: dict[str, RiskScore],
+    entities: list[Entity],
+    hhi: float,
+    country_distribution: dict[str, float],
+) -> None:
+    """
+    F1: append the portfolio geo-concentration HHI contribution to each node's
+    geopolitical evidence. Called after graph metrics are computed (HHI needs the
+    full portfolio). Each node's evidence cross-references its own country share,
+    making the stat-card HHI figure explainable in the per-node inspector.
+    """
+    entity_country = {e.id: normalize_country(e.hq_country) for e in entities}
+    for eid, score in risk_scores.items():
+        country = entity_country.get(eid, "")
+        share = country_distribution.get(country)
+        if share is not None:
+            label = (
+                f"Portfolio geo-concentration HHI: {hhi:.0f} — "
+                f"{country} accounts for {share:.1f}% of supply spend"
+            )
+        else:
+            label = f"Portfolio geo-concentration HHI: {hhi:.0f}"
+        score.geopolitical.key_drivers.append(label)
+        score.geopolitical.evidence.append(DriverEvidence(
+            label=label,
+            source_url="#geo-distribution-container",
+            retrieved_at=datetime.utcnow(),
+            value=f"{share:.1f}%" if share is not None else None,
+        ))
 
 
 # ── Composite Scorer ──────────────────────────────────────────────────────────
