@@ -358,7 +358,81 @@ alternatives section is no longer blank.
 
 ---
 
-## Out of scope (do not start without explicit re-scoping)
+# H — UI polish & graph stability
+
+## ✅ H1 · UI polish and naming pass
+**Status: Complete.**
+**Files:** `src/dashboard/templates/dashboard.html.j2`, `src/dashboard/html_generator.py`.
+**Do:**
+- **Broken card:** fix "Total Portfolio Value" `onclick` — currently a stray event handler that
+  hides the card. Replace with `switchTab('analytics')`.
+- **Viewport:** add `<meta name="viewport" content="width=device-width, initial-scale=1">` to
+  `<head>`. Currently absent; layout breaks on any non-desktop viewport.
+- **Tab names:** rename to: Network / Risk Analysis / Playbooks / Documents / Manage / Guide.
+  Remove emojis from tab buttons.
+- **Analytics table headers:** Supplier Entity Node Name → Vendor; Type → Category; Region → HQ;
+  Composite → Risk Score; Value-at-Risk (VaR) → Exposure.
+- **Risk badge three-band:** current logic is binary (≥65 red, else green). Replace with:
+  `score < 35` → green (`bg-emerald-950 text-emerald-400`), `35–64` → amber
+  (`bg-amber-950 text-amber-400`), `≥65` → red (`bg-red-950 text-red-400`). A vendor at 47/100
+  must never display a green badge.
+- **Currency formatting in stat cards:** format large figures as abbreviated strings —
+  `$84.2B`, `$26.3B`. Full precision stays in the analytics table.
+- **Section headings:** "Portfolio Risk Transparency Console" → "Vendor Risk Register";
+  "Automated Supplier Communication Workspace" → "Outreach Generator";
+  "Sourcing Node Inspector" → "Vendor Inspector";
+  "Active Procurement Playbooks" → "Risk Playbooks".
+- **Expand indicator:** the `▶` in analytics table rows must rotate to `▼` on expand and back
+  on collapse. Currently it stays pointing right regardless of state.
+- **Heading hierarchy:** normalise to three tiers throughout —
+  section header (`text-sm font-bold uppercase tracking-wider`),
+  card title (`text-sm font-semibold`), label (`text-xs text-slate-400 uppercase`).
+  Remove all uses of `text-md` — it is not a valid Tailwind class and renders as browser default.
+- **Emoji clock in freshness panel:** remove `🕒` from the heading; plain text only.
+- **Inspector dimension legend:** add a static one-line footnote below the FIN/OPS/COMP/GEO
+  score grid: `Financial (30%) · Operational (30%) · Compliance (20%) · Geopolitical (20%)`.
+- **`document.title` on tab switch:** append the active tab name to the page title on each
+  `switchTab` call so the browser tab reflects the current view.
+
+**Acceptance:** all four stat cards navigate correctly on click; no badge misrepresents medium
+risk as green; currency in headers reads cleanly at billion scale; the dashboard reads as a
+professional tool — no `text-md`, no stray handlers, no truncated affordances.
+
+## ✅ H2 · Supply chain graph — stable hierarchical layout
+**Status: Complete.**
+**Files:** `src/dashboard/templates/dashboard.html.j2` (`renderLeftToRightNetwork` function only).
+**Problem:** manual `node.x`/`node.y` positions are assigned, then `physics: { enabled: true }`
+immediately overrides them. The graph springs away from the intended layout on load and any drag
+causes a full-graph ripple.
+**Do:**
+- Remove the entire `node.x` / `node.y` / `Math.sin` / `Math.cos` position calculation loop.
+- Replace the physics + layout block with vis.js hierarchical layout:
+  ```js
+  layout: {
+    hierarchical: {
+      enabled: true,
+      direction: 'LR',
+      sortMethod: 'directed',
+      levelSeparation: 220,
+      nodeSpacing: 80,
+      treeSpacing: 150
+    }
+  },
+  physics: { enabled: false }
+  ```
+- Set `nodes: { physics: false }` so dragging a single node never pulls others.
+- After `new vis.Network(...)`, call `networkInstance.setOptions({ physics: false })` as a
+  hard post-init lock.
+- Remove the `barnesHut` block entirely.
+- Verify that all 17 nodes in `VIS_NODES_ARRAY` carry correct `level` values before assuming
+  the layout will be correct: target = 0, tier-1 = 1, tier-2 = 2, tier-3 = 3.
+- Keep the existing `networkInstance.on("click", ...)` handler untouched.
+
+**Acceptance:** graph renders immediately in a stable left-to-right tree; Apple centered;
+suppliers left, customers and partners right; tier-2 and tier-3 nodes visibly further out;
+dragging any node moves only that node with no ripple; releasing a node leaves it in place.
+
+
 
 - **Live footprint refresh via a backend.** True on-demand re-fetch and recompute requires a
   service layer (e.g. FastAPI) that converts the project from a portable self-contained artifact
@@ -373,18 +447,19 @@ alternatives section is no longer blank.
 
 ## Session sequence
 
-1. **Session 1 — Foundation (A1 done ✅):** A2 → A3 → A4. Country normalization, provenance
-   anchors, dashboard honesty pass. Single HTML output at the end.
-2. **Session 2 — Math + exposure:** B1 → B3 → B4 → B2. Risk-scaled VaR, portfolio aggregation,
-   impact×probability matrix, spend-sized nodes. Single HTML output at the end.
-3. **Session 3 — Compliance grounding:** E1 → E2 → E3. `DriverEvidence` model, SEC EDGAR
+1. **Session 1 — Foundation (A1 done ✅, A2–A4 done ✅):** complete.
+2. **Session 2 — Math + exposure (done ✅):** B1 → B3 → B4 → B2. Risk-scaled VaR, portfolio
+   aggregation, impact×probability matrix, spend-sized nodes. Single HTML output at the end.
+3. **Session 3 — UI polish + graph stability (done ✅):** H1 → H2. Naming pass, badge fix,
+   currency formatting, broken card, graph hierarchical layout. Single HTML output at the end.
+4. **Session 4 — Compliance grounding:** E1 → E2 → E3. `DriverEvidence` model, SEC EDGAR
    fetch, compliance rendered in inspector. Single HTML output at the end.
-4. **Session 4 — Geo grounding + ops completeness:** F1 → F2 → G1 → G2. GDELT fetch, geo
+5. **Session 5 — Geo grounding + ops completeness:** F1 → F2 → G1 → G2. GDELT fetch, geo
    evidence in inspector, ops driver completeness, pre-vetted alternatives seeded and ranked.
    Single HTML output at the end.
-5. **Session 5 — Explainability UI + polish:** C1 → C2 → C5. Full dimension breakdown in
+6. **Session 6 — Explainability UI + polish:** C1 → C2 → C5. Full dimension breakdown in
    inspector, all provenance links rendered, freshness panel.
-6. **Session 6 — Stretch:** A5 → C3 → C4 → D1 → D2 as time allows.
+7. **Session 7 — Stretch:** A5 → C3 → C4 → D1 → D2 as time allows.
 
-If time is short: **A2–A4 + B1 + E1–E2 + G1** deliver grounded, differentiated scores across
-all four dimensions with visible evidence — the highest-leverage subset.
+If time is short: **B1 + H1 + H2 + E1–E2 + G1** deliver correct math, a professional UI, and
+grounded scores across all four dimensions — the highest-leverage subset.

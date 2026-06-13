@@ -25,6 +25,31 @@ def _score_to_colour(score: float) -> str:
     return "#22c55e"
 
 
+# ── B2: node radius proportional to contract spend (sqrt-scaled) ──
+# Square-root keeps a $22B vendor from visually swamping a $1B one while still
+# making spend legible. The target (Apple) is pinned to MAX_NODE_SIZE by design.
+MIN_NODE_SIZE = 18.0
+MAX_NODE_SIZE = 60.0      # ceiling for vendors; the target sits strictly above this
+TARGET_NODE_SIZE = 72.0  # target (Apple) is largest by design, regardless of its own spend
+# k tuned so the spend range stays differentiated below the cap:
+# ~$1B -> ~27px, ~$8.5B -> ~44px, ~$22B -> ~58px (just under the 60 ceiling).
+NODE_SIZE_K   = 0.00028
+
+
+def _spend_for_entity(entity) -> float:
+    """Contract spend used for sizing/VaR; falls back to the importance proxy
+    used in cascading_risk.py when no procurement record exists."""
+    if entity.annual_spend_usd is not None:
+        return float(entity.annual_spend_usd)
+    return float(entity.importance_score * 1_850_000)
+
+
+def _node_size_for_spend(spend: float) -> float:
+    import math
+    return round(max(MIN_NODE_SIZE, min(MAX_NODE_SIZE,
+                 MIN_NODE_SIZE + NODE_SIZE_K * math.sqrt(max(spend, 0.0)))), 1)
+
+
 def _build_vis_nodes(ps: PipelineState) -> list[dict]:
     nodes = []
     for entity in ps.entities:
@@ -32,7 +57,10 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
         score     = score_obj.composite_score if score_obj else 0
         level     = score_obj.risk_level.value if score_obj else "unknown"
         colour    = _score_to_colour(score)
-        size      = 20 + entity.importance_score * 3   
+
+        spend     = _spend_for_entity(entity)
+        is_target = entity.entity_type.value == "target" or entity.depth_level == 0
+        size      = TARGET_NODE_SIZE if is_target else _node_size_for_spend(spend)
 
         var_val = 0.0
         lineage_payload = {}
@@ -48,10 +76,21 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
         if fp_record and hasattr(fp_record, 'provenance_anchors'):
             provenance_payload = {k: v.model_dump() for k, v in fp_record.provenance_anchors.items()}
 
+        # Tooltip surfaces the spend that drives the node's size (B2) and its VaR.
+        tooltip = (
+            f"{entity.name}\n"
+            f"Type: {entity.entity_type.value.title()}  |  {entity.hq_country or 'US'}\n"
+            f"Contract spend: ${spend:,.0f}\n"
+            f"Composite risk: {round(score, 1)}/100\n"
+            f"Value-at-Risk: ${var_val:,.0f}\n"
+            f"(node size ∝ √spend)"
+        )
+
         nodes.append({
             "id":    entity.id,
             "label": entity.name,
             "size":  size,
+            "title": tooltip,
             "font":  {"color": "#f8fafc", "size": 12},
             "group": entity.entity_type.value,
             "level": entity.depth_level,
@@ -65,16 +104,19 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
                 "score":       round(score, 1),
                 "risk_level":  level,
                 "narrative":   score_obj.narrative if score_obj else "Baseline audit cycle complete.",
-                
+
                 # REMOVE STRIPPED FALLBACKS — MAP DIRECTLY TO DATA SCHEMAS
                 "fin_score":   round(score_obj.financial.score, 1) if score_obj else 50.0,
                 "ops_score":   round(score_obj.operational.score, 1) if score_obj else 50.0,
                 "comp_score":  round(score_obj.compliance.score, 1) if score_obj else 50.0,
                 "geo_score":   round(score_obj.geopolitical.score, 1) if score_obj else 50.0,
-                
+
                 "fin_drivers": score_obj.financial.key_drivers if score_obj else [],
                 "ops_drivers": score_obj.operational.key_drivers if score_obj else [],
-                
+
+                "annual_spend_usd": round(spend, 2),
+                "importance":  entity.importance_score,
+                "is_target":   is_target,
                 "value_at_risk": var_val,
                 "mathematical_lineage": lineage_payload,
                 "provenance_anchors": provenance_payload
@@ -100,6 +142,17 @@ def _build_vis_edges(ps: PipelineState) -> list[dict]:
 
 
 def _build_risk_table(ps: PipelineState) -> list[dict]:
+    # Build node meta once (not per-row) and index by id.
+    meta_by_id = {n["id"]: n["meta"] for n in _build_vis_nodes(ps)}
+
+    # B4: dependence = vendor spend / total vendor portfolio spend. Use the same
+    # vendor-only portfolio total computed in cascading_risk.py (target excluded).
+    total_portfolio_spend = (
+        ps.graph_metrics.total_portfolio_value_usd
+        if ps.graph_metrics and ps.graph_metrics.total_portfolio_value_usd
+        else 0.0
+    )
+
     rows = []
     for entity in ps.entities:
         score_obj = ps.risk_scores.get(entity.id)
@@ -109,9 +162,8 @@ def _build_risk_table(ps: PipelineState) -> list[dict]:
         if ps.graph_metrics and entity.id in ps.graph_metrics.node_metrics:
             var_val = ps.graph_metrics.node_metrics[entity.id].value_at_risk_usd
 
-        nodes_lookup = _build_vis_nodes(ps)
-        matched_node = next((n for n in nodes_lookup if n["id"] == entity.id), None)
-        meta_data = matched_node["meta"] if matched_node else {}
+        spend = _spend_for_entity(entity)
+        dependence_pct = round(spend / total_portfolio_spend * 100.0, 1) if total_portfolio_spend else 0.0
 
         rows.append({
             "entity_id": entity.id,
@@ -125,11 +177,26 @@ def _build_risk_table(ps: PipelineState) -> list[dict]:
             "ops":       round(score_obj.operational.score, 1),
             "comp":      round(score_obj.compliance.score, 1),
             "geo":       round(score_obj.geopolitical.score, 1),
+            "annual_spend_usd": round(spend, 2),
+            "dependence_pct": dependence_pct,
             "value_at_risk": var_val,
-            "meta":      meta_data
+            "meta":      meta_by_id.get(entity.id, {})
         })
     rows.sort(key=lambda r: r["score"], reverse=True)
     return rows
+
+
+def _abbrev_usd(value: float) -> str:
+    """Abbreviated currency for stat cards ($84.2B, $26.3B, $850.0M).
+    Full precision is preserved in the analytics table — this is header-only."""
+    v = float(value or 0.0)
+    if abs(v) >= 1e9:
+        return f"${v / 1e9:.1f}B"
+    if abs(v) >= 1e6:
+        return f"${v / 1e6:.1f}M"
+    if abs(v) >= 1e3:
+        return f"${v / 1e3:.0f}K"
+    return f"${v:,.0f}"
 
 
 def _build_summary_stats(ps: PipelineState) -> dict:
@@ -149,7 +216,10 @@ def _build_summary_stats(ps: PipelineState) -> dict:
         "spof_count":       len(ps.graph_metrics.single_points_of_failure) if ps.graph_metrics else 0,
         "total_portfolio_value": portfolio_val,
         "total_value_at_risk": var_total,
-        "geo_concentration_hhi": hhi_val
+        "geo_concentration_hhi": hhi_val,
+        # Abbreviated header strings (full precision stays in the analytics table).
+        "total_portfolio_value_abbr": _abbrev_usd(portfolio_val),
+        "total_value_at_risk_abbr": _abbrev_usd(var_total),
     }
 
 

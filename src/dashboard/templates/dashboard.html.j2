@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sentry Vendor Risk Intel Center - {{ target_company }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
     <style>
         .tab-pane { display: none; }
         .tab-pane.active { display: block; }
@@ -17,7 +19,7 @@
     <div id="freshness-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
         <div class="bg-slate-900 border border-slate-700 p-6 rounded-xl max-w-lg w-full shadow-2xl max-h-[80vh] overflow-y-auto">
             <div class="flex items-center justify-between mb-4 border-b border-slate-700 pb-3">
-                <h3 class="font-bold text-white text-md">🕒 Data Freshness & Change Log</h3>
+                <h3 class="font-bold text-white text-sm">Data Freshness & Change Log</h3>
                 <button onclick="document.getElementById('freshness-modal').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg leading-none">×</button>
             </div>
             <div class="mb-5">
@@ -46,12 +48,12 @@
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 transition group">
             <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-blue-400 transition">Total Portfolio Value</p>
-            <h3 class="text-xl font-bold text-white mt-1">${{ "{:,.2f}".format(stats.total_portfolio_value) }}</h3>
+            <h3 class="text-xl font-bold text-white mt-1">{{ stats.total_portfolio_value_abbr }}</h3>
             <p class="text-[11px] text-slate-500 mt-0.5">Click to view aggregate expenditure data ↗</p>
         </div>
         <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-red-500 transition group">
             <p class="text-xs text-slate-400 font-medium uppercase tracking-wider group-hover:text-red-400 transition">Portfolio Value-at-Risk</p>
-            <h3 class="text-xl font-bold text-red-400 mt-1">${{ "{:,.2f}".format(stats.total_value_at_risk) }}</h3>
+            <h3 class="text-xl font-bold text-red-400 mt-1">{{ stats.total_value_at_risk_abbr }}</h3>
             <p class="text-[11px] text-red-500/80 mt-0.5">Click to analyze downstream cascade exposure ↗</p>
         </div>
         <div onclick="switchTab('analytics')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm cursor-pointer hover:border-amber-500 transition group">
@@ -67,12 +69,12 @@
     </div>
 
     <div class="flex gap-2 mb-4 border-b border-slate-700 pb-px">
-        <button class="tab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('map')">🗺️ Supply Chain Map</button>
-        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('analytics')">📊 Financial Impact & Scores</button>
-        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('playbook')">⚡ Action Playbook & Comm Gen</button>
-        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('dataroom')">🏢 Document Data Room</button>
-        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('nodemgmt')">✏️ Node Management Registry</button>
-        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-blue-400 hover:text-blue-300 bg-blue-950/20 border border-blue-900 rounded-t-md" onclick="switchTab('readme')">📖 Platform User Guide</button>
+        <button class="tab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('map')">Network</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('analytics')">Risk Analysis</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('playbook')">Playbooks</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('dataroom')">Documents</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-300 hover:text-white" onclick="switchTab('nodemgmt')">Manage</button>
+        <button class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-blue-400 hover:text-blue-300 bg-blue-950/20 border border-blue-900 rounded-t-md" onclick="switchTab('readme')">Guide</button>
     </div>
 
     <div id="tab-map" class="tab-pane active">
@@ -80,7 +82,7 @@
             <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700 h-[580px]" id="network-container"></div>
             <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-between">
                 <div id="node-inspector-panel">
-                    <h3 class="text-md font-bold text-white mb-2">🔍 Sourcing Node Inspector</h3>
+                    <h3 class="text-sm font-bold text-white mb-2">Vendor Inspector</h3>
                     <p class="text-xs text-slate-400">Click any asset inside the left-to-right network graph to parse sub-tier dependencies, risk scores, and alternative supplier playbooks.</p>
                     <div id="inspector-content" class="mt-4 hidden space-y-4"></div>
                 </div>
@@ -91,16 +93,18 @@
     <div id="tab-analytics" class="tab-pane">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700">
-                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Portfolio Risk Transparency Console</h3>
-                <p class="text-xs text-slate-500 mb-4">Click any row in the list below to drill down and review the granular financial metrics, Altman Z-scores, and key risk drivers.</p>
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Vendor Risk Register</h3>
+                <p class="text-xs text-slate-500 mb-4">Click a column header to sort. Contract Value (impact) is independent of Composite risk (probability) — a high-contract lesser-known vendor can outrank a low-contract major brand. Click any row to drill into the risk drivers.</p>
                 <table class="w-full text-left text-xs text-slate-200">
                     <thead>
                         <tr class="border-b border-slate-700 text-slate-400 font-semibold">
-                            <th class="pb-2 pl-2">Supplier Entity Node Name</th>
-                            <th class="pb-2">Type</th>
-                            <th class="pb-2">Region</th>
-                            <th class="pb-2">Composite</th>
-                            <th class="pb-2 text-right pr-2">Value-at-Risk (VaR)</th>
+                            <th class="pb-2 pl-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('name')">Vendor</th>
+                            <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('type')">Category</th>
+                            <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('country')">HQ</th>
+                            <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('score')">Risk Score</th>
+                            <th class="pb-2 text-right cursor-pointer hover:text-white select-none" onclick="sortAnalytics('annual_spend_usd')">Contract Value</th>
+                            <th class="pb-2 text-right cursor-pointer hover:text-white select-none" onclick="sortAnalytics('dependence_pct')">Dependence&nbsp;%</th>
+                            <th class="pb-2 text-right pr-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('value_at_risk')">Exposure</th>
                         </tr>
                     </thead>
                     <tbody id="analytics-table-body" class="divide-y divide-slate-700/40"></tbody>
@@ -111,17 +115,23 @@
                 <div class="space-y-3 mt-4" id="geo-distribution-container"></div>
             </div>
         </div>
+
+        <div class="mt-6 bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Impact &times; Probability Exposure Matrix</h3>
+            <p class="text-xs text-slate-500 mb-3">X = vendor composite risk (probability of disruption) &middot; Y = annual contract spend (impact) &middot; bubble size &amp; colour = Value-at-Risk. Top-right is the danger quadrant: high spend <em>and</em> high risk. This is why a large-contract vendor with a moderate score can carry more portfolio VaR than a low-contract, high-score one.</p>
+            <div id="exposure-scatter" style="width:100%;height:440px;"></div>
+        </div>
     </div>
 
     <div id="tab-playbook" class="tab-pane">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-1 bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-3">
-                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Active Procurement Playbooks</h3>
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Risk Playbooks</h3>
                 <div id="playbook-trigger-list" class="space-y-2"></div>
             </div>
             <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-between">
                 <div>
-                    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200 mb-2">Automated Supplier Communication Workspace</h3>
+                    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200 mb-2">Outreach Generator</h3>
                     <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
                         <div class="flex justify-between items-center text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2">
                             <div><strong>Subject Line:</strong> <span id="comm-subject" class="text-blue-400">Select a playbook item...</span></div>
@@ -141,7 +151,7 @@
             <div class="flex items-start gap-4 border-b border-slate-700 pb-4 mb-4">
                 <div class="p-3 bg-blue-900/30 rounded-lg border border-blue-500/30 text-xl">🏢</div>
                 <div>
-                    <h2 class="text-md font-bold text-white">Document Data Room <span class="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-900 align-middle">ILLUSTRATIVE — DOCUMENT INGESTION ROADMAP</span></h2>
+                    <h2 class="text-sm font-bold text-white">Document Data Room <span class="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-900 align-middle">ILLUSTRATIVE — DOCUMENT INGESTION ROADMAP</span></h2>
                     <p class="text-xs text-slate-400 mt-1">This tab illustrates the planned contract-ingestion workflow. Document upload and RAG vectorization are <strong>not yet implemented</strong>; the entries below are placeholders linked to real graph nodes from this run to show the intended mapping.</p>
                 </div>
             </div>
@@ -274,66 +284,99 @@
         const PLAYBOOK_DATA = {{ playbooks_json }};
         const FRESHNESS_DATA = {{ freshness_json }};
 
+        // ── B1 risk-scaled VaR (mirror of src/graph/cascading_risk.py) ──
+        // direct_VaR = direct_spend * (composite/100) * severity, always <= direct_spend.
+        // Manually-added nodes have no internal record (severity defaults to 0.6) and no
+        // mapped upstream dependencies, so cascade_VaR = 0 and VaR_total = direct_VaR.
+        function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+        function computeManualVaR(spend, composite, singleSource, noAlternate, hasRecord) {
+            const p = clamp(composite / 100, 0, 1);
+            const severity = hasRecord
+                ? clamp(0.5 + 0.3 * (singleSource ? 1 : 0) + 0.2 * (noAlternate ? 1 : 0), 0, 1)
+                : 0.6;
+            return spend * p * severity;  // cascade_VaR = 0 for manual leaf nodes
+        }
+
+        // ── B2 node sizing (mirror of _node_size_for_spend in html_generator.py) ──
+        const NODE_MIN_SIZE = 18.0, NODE_MAX_SIZE = 60.0, NODE_SIZE_K = 0.00028;
+        function nodeSizeForSpend(spend) {
+            return Math.round(clamp(NODE_MIN_SIZE + NODE_SIZE_K * Math.sqrt(Math.max(spend, 0)),
+                                    NODE_MIN_SIZE, NODE_MAX_SIZE) * 10) / 10;
+        }
+
         let networkInstance = null;
         let nodesDataSet = new vis.DataSet();
         let edgesDataSet = new vis.DataSet();
         let editingNodeId = null; // CRUD update selection trace register
 
+        const TAB_TITLES = {
+            map: 'Network', analytics: 'Risk Analysis', playbook: 'Playbooks',
+            dataroom: 'Documents', nodemgmt: 'Manage', readme: 'Guide'
+        };
+        const BASE_TITLE = document.title;
         function switchTab(name) {
             document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById('tab-' + name).classList.add('active');
             if(event && event.currentTarget) { event.currentTarget.classList.add('active'); }
+            if (TAB_TITLES[name]) { document.title = `${BASE_TITLE} · ${TAB_TITLES[name]}`; }
             if (name === 'map') { renderLeftToRightNetwork(); }
+            if (name === 'analytics') { renderExposureScatter(); }
         }
 
-        // ── ENFORCE NATURAL UN-CLUSTERED LEFT-TO-RIGHT SPREAD topologY ──
+        // ── STABLE LEFT-TO-RIGHT HIERARCHY (vis.js hierarchical layout, physics off) ──
+        // The hierarchical engine produces the Apple-center → suppliers-left →
+        // customers/partners-right topology directly from edge direction
+        // (sortMethod 'directed') and each node's tier `level`. No manual x/y math,
+        // no physics — so the graph renders stable on load and a dragged node moves
+        // alone with no ripple.
+        // Map each node to a SIGNED hierarchical level so the LR layout is centered
+        // on the target rather than left-anchored by raw depth:
+        //   suppliers / partners / logistics  ->  negative level  (LEFT of target)
+        //   target                            ->  level 0          (CENTER)
+        //   customers / financial             ->  positive level   (RIGHT of target)
+        // Tier (node.level: 1,2,3) sets the magnitude, so tier-2/3 push further out.
+        const LEFT_GROUPS = new Set(['supplier', 'partner', 'logistics']);
+        function layoutLevel(node) {
+            const group = (node.group || '').toLowerCase();
+            const tier = node.level || 0;           // raw depth: 0 target, 1/2/3 tiers
+            if (group === 'target' || tier === 0) return 0;
+            return LEFT_GROUPS.has(group) ? -tier : tier;
+        }
+
         function renderLeftToRightNetwork() {
             const container = document.getElementById('network-container');
             nodesDataSet.clear();
             edgesDataSet.clear();
 
-            // Set up x-axis cloud distributions by entity category role
-            const structures = VIS_NODES_ARRAY.map((node, idx) => {
-                const category = node.group ? node.group.toLowerCase() : '';
-                let anchorX = 0;
-
-                if (category === 'target') {
-                    anchorX = 0;
-                } else if (category === 'supplier') {
-                    // Spread suppliers dynamically across distinct horizontal boundaries
-                    anchorX = (node.level === 2) ? -520 : -260;
-                } else {
-                    anchorX = (node.level === 2) ? 520 : 260;
-                }
-                
-                // Introduce mathematical variations to distribute positions smoothly along the Y-axis
-                node.x = anchorX + (Math.sin(idx) * 75);
-                node.y = (idx * 65) - (VIS_NODES_ARRAY.length * 32) + (Math.cos(idx) * 45);
-                return node;
-            });
-
-            nodesDataSet.add(structures);
+            // Layout-only copy: override `level` for hierarchical placement without
+            // mutating VIS_NODES_ARRAY (which the table/scatter/inspector read by ref).
+            const layoutNodes = VIS_NODES_ARRAY.map(n => ({ ...n, level: layoutLevel(n) }));
+            nodesDataSet.add(layoutNodes);
             edgesDataSet.add(VIS_EDGES_ARRAY);
 
             const dataset = { nodes: nodesDataSet, edges: edgesDataSet };
             const configuration = {
-                nodes: { shape: 'dot', shadow: true, physics: true },
-                edges: { smooth: { type: 'continuous', roundness: 0.4 }, arrows: "to" },
-                physics: {
-                    enabled: true,
-                    barnesHut: {
-                        gravitationalConstant: -4500, // Forces strong horizontal and vertical separation
-                        centralGravity: 0.08,
-                        springLength: 160,
-                        springConstant: 0.05,
-                        avoidOverlap: 1
-                    },
-                    stabilization: { iterations: 120 }
-                }
+                nodes: { shape: 'dot', shadow: true, physics: false },
+                edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 }, arrows: "to" },
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: 'LR',
+                        sortMethod: 'directed',
+                        levelSeparation: 220,
+                        nodeSpacing: 80,
+                        treeSpacing: 150
+                    }
+                },
+                physics: { enabled: false },
+                interaction: { dragNodes: true, hover: true }
             };
 
             networkInstance = new vis.Network(container, dataset, configuration);
+            // Hard post-init lock: ensure nothing downstream can re-enable physics.
+            networkInstance.setOptions({ physics: false });
+
             networkInstance.on("click", function(params) {
                 if (params.nodes.length > 0) { showInspector(params.nodes[0]); }
             });
@@ -363,7 +406,7 @@
 
             content.innerHTML = `
                 <div class="border-b border-slate-700 pb-2">
-                    <h4 class="text-md font-bold text-blue-400">${node.meta.name}</h4>
+                    <h4 class="text-sm font-bold text-blue-400">${node.meta.name}</h4>
                     <p class="text-[10px] text-slate-400 uppercase font-mono">${node.meta.type} | Sector: ${node.meta.industry} | ${node.meta.country}</p>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-xs">
@@ -382,6 +425,7 @@
                     <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">COMP</span><strong class="text-slate-200">${node.meta.comp_score}</strong></div>
                     <div class="bg-slate-900/60 p-1 rounded border border-slate-800"><span class="text-slate-500 block">GEO</span><strong class="text-slate-200">${node.meta.geo_score}</strong></div>
                 </div>
+                <p class="text-[9px] text-slate-500 text-center -mt-1">Financial (30%) · Operational (30%) · Compliance (20%) · Geopolitical (20%)</p>
                 <div>
                     <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Cited Sources (provenance):</span>
                     <ul class="space-y-1">${sourcesList}</ul>
@@ -389,19 +433,51 @@
             `;
         }
 
+        // Compact USD formatter for table cells ($22.0B, $1.1B, $850M ...).
+        function fmtUSD(v) {
+            v = Number(v) || 0;
+            if (v >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
+            if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+            if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+            return '$' + Math.round(v).toLocaleString();
+        }
+
+        // ── Three-band risk badge: <35 green, 35–64 amber, >=65 red ──
+        // A vendor at 47/100 must read amber, never green.
+        function riskBadgeClass(score) {
+            if (score >= 65) return 'bg-red-950 text-red-400 border border-red-900';
+            if (score >= 35) return 'bg-amber-950 text-amber-400 border border-amber-900';
+            return 'bg-emerald-950 text-emerald-400 border border-emerald-900';
+        }
+
         // ── score TRANSPARENCY CONSOLE MANAGEMENT ──
+        let analyticsSort = { key: 'score', dir: -1 };  // default: highest composite first
+        function sortAnalytics(key) {
+            if (analyticsSort.key === key) { analyticsSort.dir *= -1; }
+            else { analyticsSort = { key, dir: (key === 'name' || key === 'type' || key === 'country') ? 1 : -1 }; }
+            const k = analyticsSort.key, dir = analyticsSort.dir;
+            RISK_TABLE_DATA.sort((a, b) => {
+                let av = a[k], bv = b[k];
+                if (typeof av === 'string') return dir * av.localeCompare(bv);
+                return dir * ((av || 0) - (bv || 0));
+            });
+            showTransparencyConsole();
+        }
+
         function showTransparencyConsole() {
             const tbody = document.getElementById('analytics-table-body');
             tbody.innerHTML = RISK_TABLE_DATA.map(r => `
                 <tr onclick="toggleTransparencyDropdown('${r.entity_id}')" class="hover:bg-slate-700/30 transition cursor-pointer border-b border-slate-800">
-                    <td class="py-3 pl-2 font-medium text-white flex items-center gap-2">▶ <span class="text-blue-400 hover:underline">${r.name}</span></td>
+                    <td class="py-3 pl-2 font-medium text-white flex items-center gap-2"><span id="caret-${r.entity_id}" class="inline-block transition-transform text-slate-500">▶</span> <span class="text-blue-400 hover:underline">${r.name}</span></td>
                     <td class="py-3 uppercase font-mono text-[11px] text-slate-400">${r.type}</td>
                     <td class="py-3 font-mono text-slate-300">${r.country}</td>
-                    <td class="py-3"><span class="px-2 py-0.5 rounded text-[11px] font-bold ${r.score >= 65 ? 'bg-red-950 text-red-400 border border-red-900' : 'bg-slate-900 text-emerald-400'}">${r.score}</span></td>
-                    <td class="py-3 text-right pr-2 font-mono font-bold text-slate-300">$${r.value_at_risk.toLocaleString()}</td>
+                    <td class="py-3"><span class="px-2 py-0.5 rounded text-[11px] font-bold ${riskBadgeClass(r.score)}">${r.score}</span></td>
+                    <td class="py-3 text-right font-mono text-slate-300">${fmtUSD(r.annual_spend_usd)}</td>
+                    <td class="py-3 text-right font-mono text-slate-400">${(r.dependence_pct ?? 0).toFixed(1)}%</td>
+                    <td class="py-3 text-right pr-2 font-mono font-bold text-red-400">${fmtUSD(r.value_at_risk)}</td>
                 </tr>
                 <tr id="dropdown-${r.entity_id}" class="hidden bg-slate-900/50">
-                    <td colspan="5" class="p-4">
+                    <td colspan="7" class="p-4">
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
                             <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                                 <p class="font-bold text-blue-400 mb-1">Financial Data Core (${r.meta.fin_score}/100)</p>
@@ -438,8 +514,62 @@
             `).join('');
         }
 
+        // ── B4: impact × probability exposure scatter (Plotly) ──
+        let scatterRendered = false;
+        function renderExposureScatter() {
+            const el = document.getElementById('exposure-scatter');
+            if (!el || typeof Plotly === 'undefined') return;
+
+            const rows = RISK_TABLE_DATA;
+            const vars = rows.map(r => Number(r.value_at_risk) || 0);
+            const maxVar = Math.max(1, ...vars);
+            // Bubble area ∝ VaR; sqrt keeps small-VaR nodes visible.
+            const sizes = vars.map(v => 12 + 44 * Math.sqrt(v / maxVar));
+
+            const trace = {
+                x: rows.map(r => r.score),
+                y: rows.map(r => Number(r.annual_spend_usd) || 0),
+                text: rows.map(r =>
+                    `<b>${r.name}</b><br>Composite: ${r.score}/100`
+                    + `<br>Contract: ${fmtUSD(r.annual_spend_usd)}`
+                    + `<br>Dependence: ${(r.dependence_pct ?? 0).toFixed(1)}%`
+                    + `<br>VaR: ${fmtUSD(r.value_at_risk)}`),
+                mode: 'markers+text',
+                type: 'scatter',
+                textposition: 'top center',
+                textfont: { color: '#94a3b8', size: 9 },
+                hovertemplate: '%{text}<extra></extra>',
+                marker: {
+                    size: sizes,
+                    color: vars,
+                    colorscale: [[0, '#22c55e'], [0.5, '#eab308'], [1, '#ef4444']],
+                    showscale: true,
+                    colorbar: { title: { text: 'VaR', font: { color: '#94a3b8', size: 10 } },
+                                tickfont: { color: '#94a3b8', size: 9 }, thickness: 10, len: 0.6 },
+                    line: { color: '#0f172a', width: 1 },
+                    opacity: 0.85,
+                },
+            };
+
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(15,23,42,0.4)',
+                margin: { l: 70, r: 20, t: 10, b: 50 },
+                xaxis: { title: { text: 'Composite Risk Score  (probability of disruption →)', font: { color: '#94a3b8', size: 11 } },
+                         color: '#94a3b8', gridcolor: 'rgba(100,116,139,0.15)', zeroline: false, range: [0, 100] },
+                yaxis: { title: { text: 'Annual Contract Spend  (impact →)', font: { color: '#94a3b8', size: 11 } },
+                         color: '#94a3b8', gridcolor: 'rgba(100,116,139,0.15)', zeroline: false, type: 'log' },
+                showlegend: false,
+            };
+
+            Plotly.react(el, [trace], layout, { displayModeBar: false, responsive: true });
+            scatterRendered = true;
+        }
+
         function toggleTransparencyDropdown(id) {
-            document.getElementById('dropdown-' + id).classList.toggle('hidden');
+            const expanded = !document.getElementById('dropdown-' + id).classList.toggle('hidden');
+            const caret = document.getElementById('caret-' + id);
+            if (caret) { caret.textContent = expanded ? '▼' : '▶'; }
         }
 
         // ── DATA FRESHNESS & CHANGE PANEL (static, real provenance timestamps) ──
@@ -519,8 +649,8 @@
             document.getElementById('form-node-type').value = node.group;
             document.getElementById('form-node-country').value = node.meta?.country || 'US';
             document.getElementById('form-node-industry').value = node.meta?.industry || 'General Operations';
-            document.getElementById('form-node-importance').value = ((node.size - 20) / 3).toFixed(1);
-            document.getElementById('form-node-spend').value = node.meta?.value_at_risk || 2500000;
+            document.getElementById('form-node-importance').value = (node.meta?.importance ?? 5.0).toFixed(1);
+            document.getElementById('form-node-spend').value = node.meta?.annual_spend_usd || 2500000;
         }
 
         function handleManualNodeSubmit(event) {
@@ -538,23 +668,27 @@
                 // UPDATE RECORD MODE
                 const targetNode = VIS_NODES_ARRAY.find(n => n.id === editingNodeId);
                 if (targetNode) {
+                    const composite = targetNode.meta.score || 45.0;
+                    const varTotal = computeManualVaR(spend, composite, false, false, false);
                     targetNode.label = name;
                     targetNode.group = type;
-                    targetNode.size = 20 + (importance * 3);
-                    targetNode.title = `Entity: ${name}\nType: ${type.toUpperCase()}\nHQ Region: ${country}\nRisk Score: ${targetNode.meta.score}/100\nValue-at-Risk: $${spend.toLocaleString()}`;
-                    
+                    targetNode.size = nodeSizeForSpend(spend);
+                    targetNode.title = `Entity: ${name}\nType: ${type.toUpperCase()}\nHQ Region: ${country}\nRisk Score: ${composite}/100\nContract Spend: $${spend.toLocaleString()}\nValue-at-Risk: $${Math.round(varTotal).toLocaleString()}`;
+
                     targetNode.meta.name = name;
                     targetNode.meta.type = type;
                     targetNode.meta.country = country;
                     targetNode.meta.industry = industry;
-                    targetNode.meta.value_at_risk = spend;
-                    
+                    targetNode.meta.annual_spend_usd = spend;
+                    targetNode.meta.value_at_risk = varTotal;
+
                     const matchedTable = RISK_TABLE_DATA.find(r => r.entity_id === editingNodeId);
                     if (matchedTable) {
                         matchedTable.name = name;
                         matchedTable.type = type.toUpperCase();
                         matchedTable.country = country;
-                        matchedTable.value_at_risk = spend;
+                        matchedTable.annual_spend_usd = spend;
+                        matchedTable.value_at_risk = varTotal;
                         matchedTable.meta = targetNode.meta;
                     }
                 }
@@ -567,27 +701,31 @@
                     return;
                 }
 
+                const composite = 45.0;
+                const varTotal = computeManualVaR(spend, composite, false, false, false);
                 const mockNode = {
                     id: id, label: name,
-                    title: `Entity: ${name}\nType: ${type.toUpperCase()}\nHQ Region: ${country}\nRisk Score: 45.0/100\nValue-at-Risk: $${spend.toLocaleString()}`,
+                    title: `Entity: ${name}\nType: ${type.toUpperCase()}\nHQ Region: ${country}\nRisk Score: ${composite}/100\nContract Spend: $${spend.toLocaleString()}\nValue-at-Risk: $${Math.round(varTotal).toLocaleString()}`,
                     color: { background: '#3b82f6', border: '#0f172a' },
-                    size: 20 + (importance * 3),
+                    size: nodeSizeForSpend(spend),
                     font: { color: '#f8fafc', size: 12 },
                     group: type, level: 1,
                     meta: {
                         entity_id: id, name: name, ticker: "—", type: type, industry: industry, country: country,
-                        depth: 1, score: 45.0, risk_level: "medium", narrative: "Manually registered sourcing component asset.",
-                        fin_score: 50.0, ops_score: 50.0, comp_score: 50.0, geo_score: 50.0, value_at_risk: spend,
+                        depth: 1, score: composite, risk_level: "medium", narrative: "Manually registered sourcing component asset.",
+                        fin_score: 50.0, ops_score: 50.0, comp_score: 50.0, geo_score: 50.0,
+                        annual_spend_usd: spend, value_at_risk: varTotal,
                         backups: [], fin_drivers: ["Manual data insertion baseline"], ops_drivers: ["Awaiting document execution audit"]
                     }
                 };
 
                 VIS_NODES_ARRAY.push(mockNode);
                 VIS_EDGES_ARRAY.push({ from: id, to: targetEdge, label: "supplies_component", width: 2, color: { color: '#64748b' }, arrows: "to" });
-                
+
                 RISK_TABLE_DATA.push({
                     entity_id: id, name: name, ticker: "—", type: type.toUpperCase(), country: country,
-                    score: 45.0, level: "medium", fin: 50.0, ops: 50.0, comp: 50.0, geo: 50.0, value_at_risk: spend, meta: mockNode.meta
+                    score: composite, level: "medium", fin: 50.0, ops: 50.0, comp: 50.0, geo: 50.0,
+                    annual_spend_usd: spend, value_at_risk: varTotal, meta: mockNode.meta
                 });
 
                 alert(`Node "${name}" successfully compiled and injected!`);
@@ -596,6 +734,7 @@
 
             renderNodeDirectory();
             showTransparencyConsole();
+            renderExposureScatter();
             switchTab('map');
         }
 

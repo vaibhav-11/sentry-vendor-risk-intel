@@ -95,7 +95,7 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
     rels = ps.relationships or entities_to_relationships(ps.entities)
     G = build_graph(ps.entities, rels)
     G = attach_risk_scores(G, ps.risk_scores)
-    ps.graph_metrics = compute_graph_metrics(G, ps.risk_scores)
+    ps.graph_metrics = compute_graph_metrics(G, ps.risk_scores, footprint_data=ps.footprint_data)
 
     # ── 3. Batch LLM: generate risk narratives for all scored entities ─────
     logger.info(f"[Risk] Generating narratives for {len(ps.risk_scores)} entities via LLM")

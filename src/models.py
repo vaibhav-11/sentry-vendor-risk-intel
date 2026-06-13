@@ -120,7 +120,14 @@ class SourceProvenanceAnchor(BaseModel):
     verbatim_snippet: str    # Verbatim text fragment for side-by-side UI view
 
 class MathematicalLineage(BaseModel):
-    equation_model: str = "VaR = DirectSpend + (Sum(DownstreamImportance * ScalingFactor) * (BaseRisk / 100))"
+    # Risk-scaled VaR model (B1): VaR_total = direct_VaR + cascade_VaR, where
+    #   direct_VaR  = direct_spend * p_disruption * severity   (always <= direct_spend)
+    #   cascade_VaR = Sum over dependencies of (child_spend * child_composite/100 * dependency_strength)
+    equation_model: str = (
+        "VaR_total = direct_VaR + cascade_VaR | "
+        "direct_VaR = direct_spend * (composite/100) * severity | "
+        "cascade_VaR = Sum(child_spend * child_composite/100 * dependency_strength)"
+    )
     direct_spend_usd: float
     betweenness_centrality: float
     cascade_multiplier: float
@@ -128,7 +135,15 @@ class MathematicalLineage(BaseModel):
     downstream_dependent_nodes_count: int
     raw_propagated_exposure_usd: float
     composite_risk_weight: float
-    final_value_at_risk_usd: float
+
+    # ── B1 risk-scaled VaR decomposition ──
+    p_disruption: float = 0.0            # composite_score / 100
+    severity: float = 0.6               # clamp(0.5 + 0.3*single_source + 0.2*no_alternate, 0, 1)
+    single_source: bool = False
+    no_alternate_available: bool = False
+    direct_var_usd: float = 0.0         # direct_spend * p_disruption * severity (<= direct_spend)
+    cascade_var_usd: float = 0.0        # genuine downstream-dependency cascade
+    final_value_at_risk_usd: float      # direct_var_usd + cascade_var_usd
 
 # ── Internal Vendor Registry (synthetic data) ─────────────────────────────────
 
