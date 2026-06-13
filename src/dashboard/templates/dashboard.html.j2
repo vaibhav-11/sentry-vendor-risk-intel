@@ -240,38 +240,140 @@
     </div>
 
     <div id="tab-readme" class="tab-pane">
-        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 max-w-4xl mx-auto space-y-6">
-            <div>
-                <h2 class="text-lg font-bold text-white border-b border-slate-700 pb-2 flex items-center gap-2">📖 Sentry Engine Operations Blueprint</h2>
-                <p class="text-xs text-slate-300 mt-2 leading-relaxed">This analytics control center evaluates third-party and sub-tier supplier risks by monitoring digital data footprints and contract values. Use the tabs below to navigate the core modules:</p>
+        <div class="max-w-4xl mx-auto space-y-6">
+
+            <!-- Header -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h2 class="text-sm font-bold uppercase tracking-wider text-white mb-1">Sentry — Vendor Risk Intelligence</h2>
+                <p class="text-xs text-slate-400 leading-relaxed">Sentry maps a target company's supply chain across multiple tiers, aggregates financial, operational, compliance, and geopolitical signals from live public sources, and scores each vendor across four weighted dimensions. Every score on this dashboard is traceable to a cited, timestamped source. Click any node in the Network tab to see the full evidence breakdown.</p>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
-                    <h4 class="font-bold text-blue-400">🗺️ Supply Chain Map</h4>
-                    <p class="text-slate-400 mt-1">An interactive graph displaying your supply chain topology structured in a left-to-right hierarchy. Upstream vendors occupy the left quadrant, your company resides in the center, and downstream distribution vectors flow out toward the right.</p>
-                </div>
-                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
-                    <h4 class="font-bold text-emerald-400">📊 Financial Impact & Scores</h4>
-                    <p class="text-slate-400 mt-1">Provides absolute transparency into your portfolio risks. Click any company's data row to expand its risk scores and verify the specific metrics used to calculate them.</p>
-                </div>
-                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
-                    <h4 class="font-bold text-purple-400">⚡ Action Playbook & Comm Gen</h4>
-                    <p class="text-slate-400 mt-1">Automates risk mitigation workflows. Select any vulnerability flag to review pre-vetted dual-sourcing options and generate contextual outreach correspondence templates.</p>
-                </div>
-                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
-                    <h4 class="font-bold text-amber-400">✏️ Node Management Registry</h4>
-                    <p class="text-slate-400 mt-1">Allows you to expand your network graph manually. Add custom operational entities and link them directly to dependencies across the interactive network array.</p>
-                </div>
-            </div>
-            <div class="pt-4 border-t border-slate-700">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">Composite Score Formulation Models</h3>
-                <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-xs space-y-2 text-slate-300">
-                    <p>• <strong>Financial Parameters (30% Weight):</strong> Evaluates operational liquidity buffers, total debt ratios, and solvency markers via computed Altman Z-Scores.</p>
-                    <p>• <strong>Operational Parameters (30% Weight):</strong> Measures single-source delivery paths, business continuity plan coverage, and historical system audit results.</p>
-                    <p>• <strong>Compliance Parameters (20% Weight):</strong> Monitors corporate governance metrics, standard certification updates, and SEC disclosure filings.</p>
-                    <p>• <strong>Geopolitical Parameters (20% Weight):</strong> Evaluates territory infrastructure risks, regional trade adjustments, and manufacturing concentration factors.</p>
+
+            <!-- Dashboard tabs -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Dashboard Tabs</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
+                        <h4 class="font-semibold text-blue-400 mb-1">Network</h4>
+                        <p class="text-slate-400 leading-relaxed">Interactive supply chain graph in a left-to-right hierarchy. Upstream suppliers occupy the left, the target company sits at the center, and downstream customers and partners extend to the right. Node size is proportional to contract spend. Node colour reflects composite risk score — green below 35, amber 35–64, red 65 and above. Single Points of Failure are ringed in red. Click any node to open the Vendor Inspector.</p>
+                    </div>
+                    <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
+                        <h4 class="font-semibold text-emerald-400 mb-1">Risk Analysis</h4>
+                        <p class="text-slate-400 leading-relaxed">Full vendor risk register sortable by Risk Score, Contract Value, or Exposure. Expand any row to see the four dimension scores with their individual drivers. The impact × probability scatter plot surfaces which vendors represent the largest combination of spend exposure and risk probability. The regional concentration chart shows portfolio HHI — a measure of geographic dependency.</p>
+                    </div>
+                    <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
+                        <h4 class="font-semibold text-purple-400 mb-1">Playbooks</h4>
+                        <p class="text-slate-400 leading-relaxed">AI-generated outreach drafts targeting the highest-risk vendors in this run — one for the highest composite score, one for the highest-spend single-source vendor. Each draft references the specific risk drivers that triggered it. Use the Outreach Generator to compile and copy a ready-to-send communications package.</p>
+                    </div>
+                    <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
+                        <h4 class="font-semibold text-amber-400 mb-1">Manage</h4>
+                        <p class="text-slate-400 leading-relaxed">Add or remove supply chain entities manually. New nodes are scored using the same VaR formula as pipeline-generated nodes: <code class="text-slate-300">VaR = spend × (score/100) × severity</code>, where severity defaults to 0.6 for manually added entities without an internal vendor record. Manually added nodes appear immediately in the Network graph.</p>
+                    </div>
                 </div>
             </div>
+
+            <!-- Scoring model -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Risk Scoring Model</h3>
+                <p class="text-xs text-slate-400 mb-4 leading-relaxed">Each vendor receives a composite risk score from 0 to 100, calculated as a weighted average of four dimensions. Higher scores indicate higher risk. All dimension scores are computed deterministically from live source data — the LLM writes the narrative summary but does not determine the scores.</p>
+
+                <div class="space-y-4 text-xs">
+
+                    <!-- Financial -->
+                    <div class="border border-slate-700 rounded-lg overflow-hidden">
+                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                            <span class="font-semibold text-blue-400">Financial</span>
+                            <span class="text-slate-400">30% of composite</span>
+                        </div>
+                        <div class="p-4 space-y-2 text-slate-300">
+                            <p><strong class="text-slate-200">Altman Z-Score</strong> — a multi-factor solvency model computed from yfinance data. Z &gt; 2.99 = Safe Zone; 1.81–2.99 = Grey Zone (elevated distress risk); Z &lt; 1.81 = Distress Zone (potential insolvency signal). Each band maps to a base financial score.</p>
+                            <p><strong class="text-slate-200">Revenue Growth</strong> — year-on-year revenue change. Contraction of more than 5% adds a penalty; expansion above 10% provides a credit.</p>
+                            <p><strong class="text-slate-200">Debt-to-Equity Ratio</strong> — measures financial leverage. Ratios above 150% indicate aggressive leverage and increase the score.</p>
+                            <p><strong class="text-slate-200">Current Ratio</strong> — current assets divided by current liabilities. Ratios below 1.0 indicate short-term liquidity stress.</p>
+                            <p class="text-slate-400 pt-1">Source: Yahoo Finance (yfinance). Each metric is cited with a direct link to the vendor's quote page, visible in the Vendor Inspector under Financial evidence.</p>
+                        </div>
+                    </div>
+
+                    <!-- Operational -->
+                    <div class="border border-slate-700 rounded-lg overflow-hidden">
+                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                            <span class="font-semibold text-emerald-400">Operational</span>
+                            <span class="text-slate-400">30% of composite</span>
+                        </div>
+                        <div class="p-4 space-y-2 text-slate-300">
+                            <p><strong class="text-slate-200">Spend Concentration</strong> — this vendor's contract value as a percentage of total portfolio spend. Concentration above 10% adds a penalty; above 20% adds a larger one.</p>
+                            <p><strong class="text-slate-200">Single-Source Flag</strong> — vendors with no approved alternate supplier receive a significant score penalty. These vendors are also marked as candidate SPOFs.</p>
+                            <p><strong class="text-slate-200">Business Continuity Plan (BCP)</strong> — whether a current BCP is on file. Absence adds a penalty.</p>
+                            <p><strong class="text-slate-200">Audit Score</strong> — most recent internal audit result on a 0–100 scale. Scores below 70 add a penalty.</p>
+                            <p class="text-slate-400 pt-1">Source: internal vendor registry (<code class="text-slate-300">data/synthetic/vendor_registry.json</code>). A vendor absent from the registry receives a default operational score of 50 with an explicit "no internal record" driver.</p>
+                        </div>
+                    </div>
+
+                    <!-- Compliance -->
+                    <div class="border border-slate-700 rounded-lg overflow-hidden">
+                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                            <span class="font-semibold text-amber-400">Compliance</span>
+                            <span class="text-slate-400">20% of composite</span>
+                        </div>
+                        <div class="p-4 space-y-2 text-slate-300">
+                            <p><strong class="text-slate-200">SEC Filing Status</strong> — for US-listed entities, the system fetches recent 10-K, 10-Q, and 8-K filings from SEC EDGAR. A current 10-K with no flags reduces the baseline score. 8-K filings within 90 days (e.g. material events, going concern disclosures, impairment notices) add a penalty per flag.</p>
+                            <p><strong class="text-slate-200">Non-US-Listed Entities</strong> — vendors not listed on a US exchange (e.g. TSMC, Samsung, Foxconn, ASML) do not file with the SEC. These receive an explicit "No SEC filings — non-US-listed entity" driver with the EDGAR search URL attempted, and a fixed baseline score of 45. This reflects a data gap, not a compliance failure.</p>
+                            <p><strong class="text-slate-200">Certification Gaps</strong> — missing ISO27001, SOC2, or equivalent certifications add incremental penalties.</p>
+                            <p><strong class="text-slate-200">GDPR</strong> — absence of a signed Data Processing Agreement (DPA) adds a small penalty for vendors operating in or with EU entities.</p>
+                            <p class="text-slate-400 pt-1">Source: SEC EDGAR full-text search API. Each filing is cited with a direct EDGAR document link, visible in the Vendor Inspector under Compliance evidence.</p>
+                        </div>
+                    </div>
+
+                    <!-- Geopolitical -->
+                    <div class="border border-slate-700 rounded-lg overflow-hidden">
+                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                            <span class="font-semibold text-red-400">Geopolitical</span>
+                            <span class="text-slate-400">20% of composite</span>
+                        </div>
+                        <div class="p-4 space-y-2 text-slate-300">
+                            <p><strong class="text-slate-200">Country Risk Index</strong> — a baseline score derived from the Basel AML Index, keyed by the vendor's headquarters country (ISO-2). Taiwan scores 45/100 (moderate exposure); South Korea 25/100 (low); United States 10/100 (low); China 65/100 (elevated). This baseline is always cited as the first geopolitical driver.</p>
+                            <p><strong class="text-slate-200">Portfolio HHI Concentration</strong> — the Herfindahl-Hirschman Index measures geographic concentration of total supply spend. An HHI above 2500 indicates high concentration. The HHI contribution is cited per vendor, showing both the index value and the vendor's country's share of total spend (e.g. "TW accounts for 55.6% of supply spend"). This driver cross-links to the regional concentration chart in Risk Analysis.</p>
+                            <p><strong class="text-slate-200">GDELT Event Signals</strong> — the system monitors the GDELT Project for recent trade-policy, sanctions, and supply-chain disruption events by country. Events are fetched once per country and shared across all vendors headquartered there.</p>
+                            <p class="text-slate-400 pt-1">Source: Basel AML Index (country risk), GDELT Project (event signals). All geopolitical evidence is cited with source URLs, visible in the Vendor Inspector under Geopolitical evidence.</p>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- VaR methodology -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Value-at-Risk Methodology</h3>
+                <p class="text-xs text-slate-400 mb-3 leading-relaxed">Each vendor's Value-at-Risk (VaR) represents the estimated financial exposure if that vendor were to experience a significant disruption. It is always less than or equal to the contract value for direct exposure, and may exceed it only where genuine cascade dependencies exist.</p>
+                <div class="bg-slate-900 rounded-lg p-4 border border-slate-700 font-mono text-xs text-slate-300 space-y-1">
+                    <p>p_disruption  =  composite_score / 100</p>
+                    <p>severity      =  clamp(0.5 + 0.3 × single_source + 0.2 × no_alternate, 0, 1)</p>
+                    <p>direct_VaR    =  contract_spend × p_disruption × severity   <span class="text-slate-500">← always ≤ contract_spend</span></p>
+                    <p>cascade_VaR   =  Σ (child_spend × child_score/100 × dependency_strength)</p>
+                    <p>VaR_total     =  direct_VaR + cascade_VaR</p>
+                </div>
+                <div class="mt-3 space-y-1 text-xs text-slate-400">
+                    <p><strong class="text-slate-300">severity</strong> defaults to 0.6 when no internal vendor record exists (no single-source or alternate data available).</p>
+                    <p><strong class="text-slate-300">cascade_VaR</strong> is zero for leaf nodes with no downstream dependents — a vendor with no mapped dependencies cannot propagate risk further.</p>
+                    <p>The full decomposition of <code class="text-slate-300">direct_VaR</code>, <code class="text-slate-300">cascade_VaR</code>, and all intermediate values is recorded in <code class="text-slate-300">mathematical_lineage</code> on every node, accessible by clicking the node in the Network tab.</p>
+                </div>
+            </div>
+
+            <!-- SPOF and HHI -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Single Points of Failure &amp; Concentration Metrics</h3>
+                <div class="space-y-3 text-xs text-slate-400">
+                    <p><strong class="text-slate-200">Single Point of Failure (SPOF)</strong> — a vendor is flagged as a SPOF if it is marked single-source in the internal registry and has at least one downstream dependent node in the supply chain graph. SPOFs are ringed in red in the Network graph and carry a badge in the Vendor Inspector. A supply chain with many SPOFs has limited resilience to individual vendor disruptions.</p>
+                    <p><strong class="text-slate-200">Betweenness Centrality</strong> — a NetworkX graph metric measuring how often a node lies on the shortest path between other nodes. High centrality indicates a bottleneck — disrupting this vendor severs connections between many others. Shown in the Vendor Inspector under mathematical lineage.</p>
+                    <p><strong class="text-slate-200">HHI (Herfindahl-Hirschman Index)</strong> — calculated as the sum of squared market share percentages across all vendor headquarters countries, using contract spend as the weight. An HHI below 1500 indicates a diversified portfolio; 1500–2500 is moderately concentrated; above 2500 is highly concentrated. A portfolio dominated by a single country (e.g. Taiwan at 55.6% of supply spend) produces a high HHI and represents a correlated geopolitical risk.</p>
+                </div>
+            </div>
+
+            <!-- Data freshness -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">Data Freshness</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">All source data is fetched at pipeline run time and timestamped per source. The data freshness panel (accessible from the top-right of the dashboard) shows when each data source was last retrieved and the composite score change for each vendor since the previous run. To refresh the data, re-run the pipeline: <code class="text-slate-300">python scripts/run_pipeline.py --company "Apple Inc" --backend mock</code>. The previous run's scores are cached to <code class="text-slate-300">data/cache/</code> and compared automatically on the next run.</p>
+            </div>
+
         </div>
     </div>
 
