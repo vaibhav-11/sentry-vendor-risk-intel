@@ -267,3 +267,52 @@ NEWS_API_KEY=               # Optional — GDELT used as free fallback
 MAX_ENTITIES=80             # Cap supply chain node count
 MAX_DEPTH=3                 # Supply chain depth
 ```
+
+## Running Instructions
+
+Terminal 1: 
+```bash
+cd /workspace/shared/sentry-vendor-risk-intel
+mkdir models
+cd /workspace/shared/sentry-vendor-risk-intel/models
+
+pip install huggingface_hub --break-system-packages
+
+huggingface-cli download Qwen/Qwen3-14B-AWQ \
+    --local-dir ./Qwen3-14B-AWQ \
+    --local-dir-use-symlinks False
+
+cd /workspace/shared/sentry-vendor-risk-intel
+
+export SYSTEM_HSA=$(find /opt/rocm/ -name "libhsa-runtime64.so*" | head -n 1)
+export SYSTEM_ROCSOLVER=$(find /opt/rocm/ -name "librocsolver.so*" | head -n 1)
+export SYSTEM_HIPSOLVER=$(find /opt/rocm/ -name "libhipsolver.so*" | head -n 1)
+export SYSTEM_ROCSPARSE=$(find /opt/rocm/ -name "librocsparse.so*" | head -n 1)
+export SYSTEM_HIPSPARSE=$(find /opt/rocm/ -name "libhipsparse.so*" | head -n 1)
+export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64:/opt/rocm/rocsolver/lib:/opt/rocm/hipsolver/lib:/opt/rocm/rocsparse/lib:/opt/rocm/hipsparse/lib:$LD_LIBRARY_PATH
+export LD_PRELOAD="$SYSTEM_HSA:$SYSTEM_ROCSOLVER:$SYSTEM_HIPSOLVER:$SYSTEM_ROCSPARSE:$SYSTEM_HIPSPARSE"
+export HSA_OVERRIDE_GFX_VERSION=9.4.2
+
+python -m vllm.entrypoints.openai.api_server \
+    --model /workspace/shared/sentry-vendor-risk-intel/models/Qwen3-14B-AWQ \
+    --quantization awq \
+    --dtype float16 \
+    --max-model-len 4096 \
+    --gpu-memory-utilization 0.15 \
+    --host 0.0.0.0 \
+    --port 8000
+```
+
+Terminal 2:
+```bash
+cd /workspace/shared/sentry-vendor-risk-intel
+pip install -r requirements.txt --break-system-packages
+curl http://localhost:8000/v1/models  # verify server is ready first
+
+python scripts/run_pipeline.py \
+    --company "Apple Inc" \
+    --ticker AAPL \
+    --backend vllm \
+    --vllm-url http://localhost:8000/v1 \
+    --vllm-model /workspace/shared/sentry-vendor-risk-intel/models/Qwen3-14B-AWQ
+```
