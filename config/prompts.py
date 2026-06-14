@@ -36,7 +36,8 @@ Return ONLY valid JSON matching this exact schema:
       "hq_country": "string (ISO-2 code)"
     }}
   ]
-}}"""
+}}
+/no_think"""
 
 # ── Entity Risk Narrative ─────────────────────────────────────────────────────
 
@@ -98,7 +99,8 @@ risk context.
 Return ONLY valid JSON, an array, best first:
 [
   {{"name": "Candidate Name", "justification": "one sentence on fit given the risk context"}}
-]"""
+]
+/no_think"""
 
 # ── Alert Generation ──────────────────────────────────────────────────────────
 
@@ -117,7 +119,8 @@ Return ONLY valid JSON:
   "recommended_action": "single most important action to take",
   "escalate_to": "CISO|CPO|CFO|Legal|Procurement",
   "time_sensitivity": "immediate|24h|1-week|monitoring"
-}}"""
+}}
+/no_think"""
 
 # ── Executive Report ──────────────────────────────────────────────────────────
 

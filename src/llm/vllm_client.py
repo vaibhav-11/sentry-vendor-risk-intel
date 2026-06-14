@@ -18,6 +18,7 @@ import logging
 import httpx
 from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, RateLimitError
 from src.llm.interface import BaseLLMClient
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class VLLMClient(BaseLLMClient):
                 f"tokens_in={response.usage.prompt_tokens}, "
                 f"tokens_out={response.usage.completion_tokens}"
             )
-            return text
+            return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
         except APIConnectionError as e:
             msg = (
