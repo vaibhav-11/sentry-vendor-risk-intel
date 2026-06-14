@@ -149,6 +149,20 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
     # Build a name→id map for relationship construction
     name_to_id: dict[str, str] = {}
 
+    # Tier-1 and tier-2 expansions are concatenated upstream, so the same company
+    # can legitimately appear twice (e.g. a vendor that supplies both the target
+    # and a tier-1 supplier). Their slugs collide, producing duplicate entity ids.
+    # A duplicate id is fatal downstream: vis.js DataSet.add() silently aborts the
+    # entire batch on a repeated id, leaving a blank graph, and the id-keyed
+    # score/footprint dicts would clobber each other. So we keep one canonical
+    # Entity per id (first occurrence — the tier closest to the target) while still
+    # capturing every occurrence's parent link below, so a shared vendor keeps all
+    # of its edges.
+    seen_ids: set[str] = set()
+    # (entity_id, entity_type, parent_name, depth_level, importance_score) for
+    # every parsed item, duplicates included — drives relationship construction.
+    link_specs: list[tuple[str, EntityType, str, int, float]] = []
+
     for item in data.get("entities", []):
         name        = item.get("name", "Unknown")
         country     = normalize_country(item.get("hq_country", ""))
@@ -160,6 +174,21 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
         except ValueError:
             etype = EntityType.SUPPLIER
 
+        depth      = item.get("depth_level", 1)
+        importance = float(item.get("importance_score", 5))
+
+        # Resolve names to ids regardless of dedup so cross-tier parents wire up.
+        name_to_id[name.lower()] = entity_id
+        link_specs.append((entity_id, etype, parent_name, depth, importance))
+
+        if entity_id in seen_ids:
+            logger.warning(
+                f"Duplicate entity id '{entity_id}' (name='{name}') from LLM output — "
+                f"merging into first occurrence, edges preserved"
+            )
+            continue
+        seen_ids.add(entity_id)
+
         entity = Entity(
             id=entity_id,
             name=name,
@@ -167,13 +196,12 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
             entity_type=etype,
             relationship_to_parent=parent_name,
             parent_id=name_to_id.get(parent_name.lower()),
-            depth_level=item.get("depth_level", 1),
-            importance_score=float(item.get("importance_score", 5)),
+            depth_level=depth,
+            importance_score=importance,
             industry=item.get("industry", ""),
             hq_country=country,
         )
         entities.append(entity)
-        name_to_id[name.lower()] = entity_id
 
     # Resolve parent IDs now that all entities are created.
     # Edge direction encodes goods/services flow:
@@ -181,35 +209,52 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
     #   Customer chain:  parent_customer → deeper_customer  (flows AWAY from target)
     _UPSTREAM = (EntityType.SUPPLIER, EntityType.LOGISTICS, EntityType.PARTNER)
 
+    # Re-resolve each entity's parent_id now that every name is known — a parent
+    # listed after its child would have resolved to None at construction time.
+    # supply_chain_graph derives edges from this field, so it must be populated.
     for entity in entities:
         if entity.relationship_to_parent:
-            parent_id = name_to_id.get(entity.relationship_to_parent.lower())
+            resolved = name_to_id.get(entity.relationship_to_parent.lower())
+            if resolved:
+                entity.parent_id = resolved
+
+    # Edges are built from link_specs (every occurrence) rather than the deduped
+    # entity list, so a shared vendor keeps an edge to each parent it was listed
+    # under. A seen-set drops identical edges that a literal duplicate would emit.
+    seen_edges: set[tuple[str, str, str]] = set()
+
+    def _add_edge(src: str, tgt: str, rel_type: str, strength: float) -> None:
+        if src == tgt:
+            return
+        key = (src, tgt, rel_type)
+        if key in seen_edges:
+            return
+        seen_edges.add(key)
+        relationships.append(EntityRelationship(
+            source_id=src,
+            target_id=tgt,
+            relationship_type=rel_type,
+            dependency_strength=strength,
+        ))
+
+    for entity_id, etype, parent_name, _depth, importance in link_specs:
+        if parent_name:
+            parent_id = name_to_id.get(parent_name.lower())
             if parent_id:
-                entity.parent_id = parent_id
-                if entity.entity_type in _UPSTREAM:
-                    src, tgt = entity.id, parent_id   # L2_supplier → L1_supplier
+                if etype in _UPSTREAM:
+                    src, tgt = entity_id, parent_id   # L2_supplier → L1_supplier
                 else:
-                    src, tgt = parent_id, entity.id   # L1_customer → L2_customer
-                relationships.append(EntityRelationship(
-                    source_id=src,
-                    target_id=tgt,
-                    relationship_type=entity.entity_type.value,
-                    dependency_strength=entity.importance_score / 10.0,
-                ))
+                    src, tgt = parent_id, entity_id   # L1_customer → L2_customer
+                _add_edge(src, tgt, etype.value, importance / 10.0)
 
     # Add target ↔ Level-1 entity relationships with correct flow direction
-    for entity in entities:
-        if entity.depth_level == 1:
-            if entity.entity_type in _UPSTREAM:
-                src, tgt = entity.id, target_id   # supplier/partner → target
+    for entity_id, etype, _parent_name, depth, importance in link_specs:
+        if depth == 1:
+            if etype in _UPSTREAM:
+                src, tgt = entity_id, target_id   # supplier/partner → target
             else:
-                src, tgt = target_id, entity.id   # target → customer/financial
-            relationships.append(EntityRelationship(
-                source_id=src,
-                target_id=tgt,
-                relationship_type=entity.entity_type.value,
-                dependency_strength=entity.importance_score / 10.0,
-            ))
+                src, tgt = target_id, entity_id   # target → customer/financial
+            _add_edge(src, tgt, etype.value, importance / 10.0)
 
     logger.info(f"Parsed {len(entities)} entities, {len(relationships)} relationships")
     return entities, relationships
