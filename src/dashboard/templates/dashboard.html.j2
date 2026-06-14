@@ -40,7 +40,7 @@
         </div>
         <div>
             <button onclick="openFreshnessPanel()" class="px-4 py-2 bg-slate-800 border border-slate-600 hover:border-blue-500 text-xs font-bold text-slate-200 rounded-lg shadow transition flex items-center gap-2">
-                🕒 Data Freshness & Changes
+                Data Freshness & Changes
             </button>
         </div>
     </div>
@@ -374,6 +374,27 @@
                 <p class="text-xs text-slate-400 leading-relaxed">All source data is fetched at pipeline run time and timestamped per source. The data freshness panel (accessible from the top-right of the dashboard) shows when each data source was last retrieved and the composite score change for each vendor since the previous run. To refresh the data, re-run the pipeline: <code class="text-slate-300">python scripts/run_pipeline.py --company "Apple Inc" --backend mock</code>. The previous run's scores are cached to <code class="text-slate-300">data/cache/</code> and compared automatically on the next run.</p>
             </div>
 
+            <!-- Architecture notes & AMD deployment -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Architecture Notes &amp; AMD Deployment</h3>
+                <div class="space-y-3 text-xs text-slate-400">
+                    <p><strong class="text-slate-200">AMD MI300X / vLLM on ROCm.</strong> The production backend serves Qwen3-14B-AWQ via vLLM on ROCm 7.0, running on an AMD MI300X. The LLM interface is backend-agnostic (<code class="text-slate-300">mock | ollama | vllm</code>), so the same codebase runs locally with no GPU — the mock client returns structurally identical responses for end-to-end pipeline testing, and the full graph, scoring, and dashboard render without any model present.</p>
+                    <p><strong class="text-slate-200">The LLM does exactly two jobs.</strong> It generates the supply-chain entity graph (watchlist stage) and writes the per-vendor risk narratives (report stage). Every score is deterministic arithmetic over live API data — the LLM never determines a score. This separation is what keeps the dashboard auditable: a narrative can be re-read, but the number underneath it is reproducible from source.</p>
+                    <p><strong class="text-slate-200">Data scope.</strong> Tier-1 vendors come from a curated seed with verified tickers; tier-2 is added by LLM expansion on the most material nodes. Financial data is from Yahoo Finance (yfinance), compliance signals from SEC EDGAR, and geopolitical signals from GDELT plus the Basel AML country-risk index. Operational scores require an internal vendor-registry entry; entities with no record receive an explicit "no internal record" driver rather than a silent default.</p>
+                </div>
+            </div>
+
+            <!-- Future work -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Future Work</h3>
+                <ul class="space-y-3 text-xs text-slate-400 list-disc pl-5">
+                    <li><strong class="text-slate-200">Tier-3 autonomous expansion.</strong> The system currently expands to tier-2 on the most material nodes. A recursive third pass would map sub-tier semiconductor equipment and raw-material dependencies — the level at which geopolitical chokepoints (lithography, rare earth, specialty gases) become visible.</li>
+                    <li><strong class="text-slate-200">Contract document RAG.</strong> The Data Room tab illustrates the planned ingestion workflow. Uploading MSAs and SOWs would ground operational scores in actual contract terms (notice periods, SLA commitments, termination rights) rather than the internal registry alone.</li>
+                    <li><strong class="text-slate-200">Real-time monitoring.</strong> The current architecture generates a point-in-time snapshot. A scheduler triggering daily re-runs with score-delta tracking (already modelled in the data-freshness panel) would convert this into a continuous monitoring tool.</li>
+                    <li><strong class="text-slate-200">Scoring weight calibration.</strong> The four dimension weights (FIN 30 / OPS 30 / COMP 20 / GEO 20) are currently set by domain heuristic. Historical disruption-event data could calibrate these weights empirically — a model that learned which dimension signals preceded actual disruptions.</li>
+                </ul>
+            </div>
+
         </div>
     </div>
 
@@ -635,6 +656,12 @@
                     </div>
                 </div>
                 <p class="text-[9px] text-slate-500 text-center">Composite = Fin·${w.fin}% + Ops·${w.ops}% + Comp·${w.comp}% + Geo·${w.geo}%</p>
+                ${(m.narrative && m.narrative !== 'Baseline audit cycle complete.')
+                    ? `<div class="bg-slate-900/70 border-l-2 border-purple-500 pl-3 py-2 text-[11px] leading-relaxed text-slate-300">
+                         <span class="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">AI Risk Narrative</span>
+                         ${m.narrative}
+                       </div>`
+                    : ''}
                 <div class="space-y-2">
                     ${renderDimension('Financial', m.fin_score, w.fin, m.fin_drivers, m.fin_gaps, m.fin_evidence, 'text-blue-400')}
                     ${renderDimension('Operational', m.ops_score, w.ops, m.ops_drivers, m.ops_gaps, [], 'text-emerald-400')}
@@ -694,6 +721,12 @@
                 </tr>
                 <tr id="dropdown-${r.entity_id}" class="hidden bg-slate-900/50">
                     <td colspan="7" class="p-4">
+                        ${(r.meta.narrative && r.meta.narrative !== 'Baseline audit cycle complete.')
+                            ? `<div class="mb-3 bg-slate-950 border border-purple-900/40 rounded px-3 py-2 text-[11px] text-slate-300 leading-relaxed">
+                                 <span class="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">AI Risk Narrative</span>
+                                 ${r.meta.narrative}
+                               </div>`
+                            : ''}
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
                             <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                                 <p class="font-bold text-blue-400 mb-1">Financial Data Core (${r.meta.fin_score}/100)</p>

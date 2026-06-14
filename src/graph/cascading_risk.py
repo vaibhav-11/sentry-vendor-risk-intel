@@ -134,6 +134,14 @@ def compute_node_metrics(
         if len(descendants) == 0:
             cascade_var = 0.0
 
+        # The target entity (Apple) is not a vendor — it cannot pose a cascade
+        # exposure to itself. Zero its VaR after the components are computed so the
+        # lineage still records p_disruption/severity (why it was zeroed), but the
+        # node never reports a phantom value-at-risk in the inspector.
+        if _is_target(G, node_id):
+            direct_var = 0.0
+            cascade_var = 0.0
+
         var_total = direct_var + cascade_var
 
         # Retain a structural propagated-exposure figure for the audit trail.

@@ -39,6 +39,36 @@ Return ONLY valid JSON matching this exact schema:
 }}
 /no_think"""
 
+# ── Tier-2 Upstream Expansion (A5) ─────────────────────────────────────────────
+
+TIER2_EXPANSION_PROMPT = """You are expanding a vendor risk supply-chain graph one level
+deeper. Identify the 3 most material UPSTREAM TIER-2 SUPPLIERS that the following tier-1
+entity itself depends on to deliver to {target_company}.
+
+Tier-1 entity: {parent_name}
+Industry: {parent_industry} | HQ Country: {parent_country}
+
+Focus on sole-source or hard-to-replace upstream dependencies — critical equipment,
+raw materials, or licensed IP that {parent_name} cannot easily substitute. These are the
+hidden chokepoints a tier-1-only view misses.
+
+Return ONLY valid JSON matching this exact schema (exactly 3 entities):
+{{
+  "entities": [
+    {{
+      "name": "string",
+      "ticker": "string or null",
+      "entity_type": "supplier",
+      "relationship_to_parent": "{parent_name}",
+      "depth_level": 2,
+      "importance_score": 7,
+      "industry": "string",
+      "hq_country": "string (ISO-2 code)"
+    }}
+  ]
+}}
+/no_think"""
+
 # ── Entity Risk Narrative ─────────────────────────────────────────────────────
 
 ENTITY_NARRATIVE_PROMPT = """Analyse the following third-party entity for vendor risk:

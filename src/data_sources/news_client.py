@@ -143,6 +143,7 @@ async def fetch_gdelt_country_events(
         return _GDELT_COUNTRY_CACHE[country_iso2]
 
     name = _COUNTRY_QUERY.get(country_iso2, country_iso2)
+    logger.info(f"GDELT fetch: country={country_iso2} query={name!r}")
     params = {
         "query": f'"{name}" {_GEO_TERMS} sourcelang:english',
         "mode": "artlist",
@@ -151,7 +152,7 @@ async def fetch_gdelt_country_events(
         "timespan": f"{days_back}d",
     }
     evidence: list[DriverEvidence] = []
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         try:
             resp = await client.get(GDELT_URL, params=params)
             resp.raise_for_status()
@@ -173,6 +174,20 @@ async def fetch_gdelt_country_events(
                 ))
         except Exception as e:
             logger.warning(f"GDELT country fetch failed for '{name}': {e}")
+
+    # Live-path fallback: GDELT timed out or returned zero articles. Emit one
+    # honest "no events retrieved" entry so geo_events is never empty and the
+    # Geopolitical inspector shows a GDELT signal alongside the country-risk
+    # baseline (rather than the country-risk entry alone). Not fabricated data —
+    # it states plainly that no events were retrieved and links to the live search.
+    if not evidence:
+        logger.info(f"GDELT fetch: no events for country={country_iso2} ({name!r})")
+        evidence.append(DriverEvidence(
+            label=f"GDELT ({name}): no recent geopolitical events retrieved",
+            source_url=f"https://www.gdeltproject.org/search/?query={name.replace(' ', '+')}",
+            retrieved_at=datetime.utcnow(),
+            value="no-events",
+        ))
 
     _GDELT_COUNTRY_CACHE[country_iso2] = evidence
     return evidence

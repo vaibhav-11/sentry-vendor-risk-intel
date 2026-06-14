@@ -78,7 +78,21 @@ async def attach_alternatives(ps: PipelineState, llm: BaseLLMClient) -> None:
         entity = ps.entity_by_id(eid)
         if entity is None:
             continue
-        candidates = seed.get(entity.industry)
+        # Exact match first; then case-insensitive; then a partial/substring match.
+        # The mock industries are hand-aligned to the seed keys, but real LLM
+        # backends emit free-form labels ("semiconductor foundry", lowercase, etc.)
+        # that miss an exact key — which silently emptied every node's backups.
+        ind = (entity.industry or "").lower()
+        candidates = seed.get(entity.industry) or next(
+            (v for k, v in seed.items() if k.lower() == ind), None
+        ) or next(
+            (v for k, v in seed.items()
+             if ind and (k.lower() in ind or ind in k.lower())), None
+        )
+        logger.debug(
+            f"Alternatives seed lookup: {entity.name!r} "
+            f"industry={entity.industry!r} -> {bool(candidates)}"
+        )
         if not candidates:
             continue
         # Exclude the entity itself if it appears among its own industry candidates.

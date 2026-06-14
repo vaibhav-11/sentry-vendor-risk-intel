@@ -111,6 +111,95 @@ MOCK_WATCHLISTS: dict[str, list[dict]] = {
     ],
 }
 
+# ── Pre-built tier-2 upstream expansions (A5) ─────────────────────────────────
+# Keyed by lowercased tier-1 parent name. The mock returns these when the
+# watchlist agent issues a TIER2_EXPANSION_PROMPT, so the mock path exercises the
+# same seed-tier-1 + LLM-tier-2 flow the vLLM backend uses.
+
+MOCK_TIER2: dict[str, list[dict]] = {
+    "tsmc": [
+        {"name": "ASML", "ticker": "ASML", "industry": "Lithography Equipment",
+         "importance_score": 9, "hq_country": "NL"},
+        {"name": "Applied Materials", "ticker": "AMAT", "industry": "Semiconductor Equipment",
+         "importance_score": 8, "hq_country": "US"},
+        {"name": "Shin-Etsu Chemical", "ticker": "SHECY", "industry": "Silicon Wafers",
+         "importance_score": 7, "hq_country": "JP"},
+    ],
+    "foxconn": [
+        {"name": "Pegatron", "ticker": "4938.TW", "industry": "Contract Manufacturing",
+         "importance_score": 6, "hq_country": "TW"},
+        {"name": "Wistron", "ticker": "3231.TW", "industry": "Contract Manufacturing",
+         "importance_score": 6, "hq_country": "TW"},
+        {"name": "Compal Electronics", "ticker": "2324.TW", "industry": "Contract Manufacturing",
+         "importance_score": 5, "hq_country": "TW"},
+    ],
+    "alphabet": [
+        {"name": "Arista Networks", "ticker": "ANET", "industry": "Networking Hardware",
+         "importance_score": 7, "hq_country": "US"},
+        {"name": "Celestica", "ticker": "CLS", "industry": "Hardware Manufacturing",
+         "importance_score": 6, "hq_country": "CA"},
+        {"name": "Quanta Computer", "ticker": "2382.TW", "industry": "Server Manufacturing",
+         "importance_score": 6, "hq_country": "TW"},
+    ],
+    "arm holdings": [
+        {"name": "Synopsys", "ticker": "SNPS", "industry": "EDA Software",
+         "importance_score": 8, "hq_country": "US"},
+        {"name": "Cadence Design Systems", "ticker": "CDNS", "industry": "EDA Software",
+         "importance_score": 7, "hq_country": "US"},
+        {"name": "SoftBank Group", "ticker": "SFTBY", "industry": "Investment / Telecommunications",
+         "importance_score": 7, "hq_country": "JP"},
+    ],
+    "samsung electronics": [
+        {"name": "Tokyo Electron", "ticker": "TOELY", "industry": "Semiconductor Equipment",
+         "importance_score": 8, "hq_country": "JP"},
+        {"name": "Sumco", "ticker": "3436.T", "industry": "Silicon Wafers",
+         "importance_score": 7, "hq_country": "JP"},
+        {"name": "Lam Research", "ticker": "LRCX", "industry": "Semiconductor Equipment",
+         "importance_score": 7, "hq_country": "US"},
+    ],
+}
+
+
+def _mock_tier2_json(prompt: str) -> str:
+    """
+    Mock TIER2_EXPANSION_PROMPT response (A5). Detects the tier-1 parent from the
+    prompt's 'Tier-1 entity:' line and returns 3 plausible upstream tier-2 suppliers
+    with the parent wired as relationship_to_parent. Falls back to a generic trio.
+    """
+    parent_name = "Unknown Parent"
+    for line in prompt.split("\n"):
+        stripped = line.strip()
+        if stripped.lower().startswith("tier-1 entity:"):
+            parent_name = stripped.split(":", 1)[1].strip()
+            break
+
+    stubs = MOCK_TIER2.get(parent_name.lower())
+    if stubs is None:
+        stubs = [
+            {"name": f"{parent_name} Components Co", "ticker": None,
+             "industry": "Industrial Components", "importance_score": 6, "hq_country": "US"},
+            {"name": f"{parent_name} Materials Ltd", "ticker": None,
+             "industry": "Raw Materials", "importance_score": 5, "hq_country": "DE"},
+            {"name": f"{parent_name} Logistics Partners", "ticker": None,
+             "industry": "Freight & Logistics", "importance_score": 5, "hq_country": "SG"},
+        ]
+
+    entities = [
+        {
+            "name": s["name"],
+            "ticker": s.get("ticker"),
+            "entity_type": "supplier",
+            "relationship_to_parent": parent_name,
+            "depth_level": 2,
+            "importance_score": s["importance_score"],
+            "industry": s["industry"],
+            "hq_country": s["hq_country"],
+        }
+        for s in stubs
+    ]
+    return json.dumps({"entities": entities}, indent=2)
+
+
 # ── Mock narrative templates ───────────────────────────────────────────────────
 
 def _parse_driver_block(prompt: str, header_prefix: str) -> list[str]:
@@ -318,6 +407,13 @@ class MockLLMClient(BaseLLMClient):
         # ── Alternatives ranking (G2) ──────────────────────────────────────
         if "rank the candidates" in prompt_lower or "alternative vendors" in prompt_lower:
             return _mock_alternatives_json(prompt)
+
+        # ── Tier-2 upstream expansion (A5) ─────────────────────────────────
+        # Must be checked BEFORE the watchlist branch: the expansion prompt also
+        # mentions "supply-chain" and "json", which would otherwise return the
+        # full tier-1 watchlist instead of a tier-2 trio.
+        if "tier-2" in prompt_lower or "upstream tier" in prompt_lower:
+            return _mock_tier2_json(prompt)
 
         # ── Watchlist ──────────────────────────────────────────────────────
         if "watchlist" in prompt_lower or "supply chain" in prompt_lower and "json" in prompt_lower:

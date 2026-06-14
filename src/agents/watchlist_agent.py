@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 from src.models import Entity, EntityRelationship, EntityType, PipelineState
@@ -15,10 +16,99 @@ from src.risk.scorer import normalize_country
 from src.llm.interface import get_llm_client
 from src.data_sources.ticker_resolver import resolve_entity_tickers
 from src.data_sources.aggregator import load_vendor_registry
-from config.prompts import WATCHLIST_PROMPT, SYSTEM_RISK_ANALYST
+from config.prompts import WATCHLIST_PROMPT, TIER2_EXPANSION_PROMPT, SYSTEM_RISK_ANALYST
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Curated tier-1 seeds, backend-independent. The watchlist LLM (any backend) is
+# unreliable about completeness — a vLLM run returned only 8 nodes. When a seed
+# exists for the target, tier-1 is loaded deterministically from disk and the LLM
+# is used only for tier-2 upstream expansion. Non-seeded targets fall back to the
+# LLM-only path unchanged.
+_SEED_DIR = Path(__file__).resolve().parents[2] / "data" / "seed"
+_SEED_REGISTRY: dict[str, str] = {
+    "apple-inc": "apple_network.json",
+}
+
+# How many of the most material tier-1 nodes to expand into tier-2.
+_TIER2_EXPAND_TOP_N = 3
+
+
+def _load_tier1_seed(target_company: str) -> list[dict] | None:
+    """
+    Return the curated tier-1 entity dicts for a seeded target, or None when no
+    seed exists (caller falls back to the LLM watchlist path).
+    """
+    filename = _SEED_REGISTRY.get(_slug(target_company))
+    if not filename:
+        return None
+    seed_path = _SEED_DIR / filename
+    if not seed_path.exists():
+        logger.warning(f"[Watchlist] Seed registered but missing on disk: {seed_path}")
+        return None
+    try:
+        data = json.loads(seed_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"[Watchlist] Failed to read seed {seed_path}: {e}")
+        return None
+    entities = data.get("entities", [])
+    if not entities:
+        return None
+    logger.info(f"[Watchlist] Loaded {len(entities)} tier-1 entities from seed {filename}")
+    return entities
+
+
+async def _expand_tier2(
+    tier1_raw: list[dict],
+    target_company: str,
+    llm,
+) -> list[dict]:
+    """
+    Agentic tier-2 expansion (A5): pick the most material tier-1 nodes by
+    importance_score and ask the LLM for each one's top upstream suppliers. Returns
+    the parsed tier-2 entity dicts (depth_level forced to 2, parent wired). Failures
+    for an individual parent are logged and skipped — never fatal.
+    """
+    tier1_only = [e for e in tier1_raw if e.get("depth_level", 1) == 1]
+    top = sorted(
+        tier1_only,
+        key=lambda e: e.get("importance_score", 5),
+        reverse=True,
+    )[:_TIER2_EXPAND_TOP_N]
+
+    tier2_raw: list[dict] = []
+    seen_names = {e.get("name", "").lower() for e in tier1_raw}
+    for parent in top:
+        parent_name = parent.get("name", "")
+        prompt = TIER2_EXPANSION_PROMPT.format(
+            target_company=target_company,
+            parent_name=parent_name,
+            parent_industry=parent.get("industry", "Unknown"),
+            parent_country=parent.get("hq_country", ""),
+        )
+        try:
+            raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST)
+            clean = re.sub(r"```(?:json)?", "", raw).strip()
+            items = json.loads(clean).get("entities", [])
+        except Exception as e:
+            logger.warning(f"[Watchlist] Tier-2 expansion failed for {parent_name}: {e}")
+            continue
+
+        for item in items:
+            name = item.get("name", "")
+            if not name or name.lower() in seen_names:
+                continue   # skip blanks and duplicates (avoid colliding node IDs)
+            item["depth_level"] = 2
+            item["relationship_to_parent"] = parent_name
+            tier2_raw.append(item)
+            seen_names.add(name.lower())
+
+    logger.info(
+        f"[Watchlist] Tier-2 expansion added {len(tier2_raw)} entities "
+        f"across {len(top)} parent nodes"
+    )
+    return tier2_raw
 
 
 def _slug(name: str, suffix: str = "") -> str:
@@ -148,23 +238,45 @@ async def watchlist_node(state: dict[str, Any]) -> dict[str, Any]:
         hq_country="US",
     )
 
-    # Build prompt and call LLM
-    prompt = WATCHLIST_PROMPT.format(
-        company_name=ps.target_company,
-        max_depth=settings.max_depth,
-        max_children=settings.max_children_per_node,
+    llm = get_llm_client(ps.llm_backend)
+
+    # ── Tier-1: seed-first, LLM fallback ────────────────────────────────────
+    # A curated seed guarantees a complete, verified tier-1 set regardless of
+    # backend. Only non-seeded targets fall through to the LLM watchlist prompt.
+    tier1_raw = _load_tier1_seed(ps.target_company)
+    if tier1_raw is None:
+        prompt = WATCHLIST_PROMPT.format(
+            company_name=ps.target_company,
+            max_depth=settings.max_depth,
+            max_children=settings.max_children_per_node,
+        )
+        try:
+            raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST)
+            clean = re.sub(r"```(?:json)?", "", raw).strip()
+            tier1_raw = json.loads(clean).get("entities", [])
+        except Exception as e:
+            ps.add_error(f"Watchlist LLM call failed: {e}")
+            logger.error(f"[Watchlist] Error: {e}")
+            tier1_raw = []
+
+    # ── Tier-2: agentic upstream expansion on the most material nodes ───────
+    tier2_raw: list[dict] = []
+    if tier1_raw:
+        try:
+            tier2_raw = await _expand_tier2(tier1_raw, ps.target_company, llm)
+        except Exception as e:
+            ps.add_error(f"Tier-2 expansion failed: {e}")
+            logger.warning(f"[Watchlist] Tier-2 expansion error: {e}")
+
+    # Combine and build the entity/relationship graph in a single pass so the
+    # parent-wiring logic stays consistent across tiers.
+    combined_raw = tier1_raw + tier2_raw
+    entities, relationships = _parse_entities(
+        json.dumps({"target": ps.target_company, "entities": combined_raw}),
+        target_id,
     )
 
-    llm = get_llm_client(ps.llm_backend)
-    try:
-        raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST)
-        entities, relationships = _parse_entities(raw, target_id)
-    except Exception as e:
-        ps.add_error(f"Watchlist LLM call failed: {e}")
-        logger.error(f"[Watchlist] Error: {e}")
-        entities, relationships = [], []
-
-    # Enforce node cap
+    # Enforce node cap (applies after expansion — invariant D)
     if len(entities) > settings.max_entities:
         logger.warning(
             f"Capping entities from {len(entities)} to {settings.max_entities}"
