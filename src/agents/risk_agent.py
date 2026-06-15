@@ -177,7 +177,7 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
 
     if narrative_prompts:
         narratives = await llm.generate_batch(
-            narrative_prompts, system=SYSTEM_RISK_ANALYST
+            narrative_prompts, system=SYSTEM_RISK_ANALYST, max_tokens=2048
         )
         for entity_id, narrative in zip(narrative_entity_ids, narratives):
             ps.risk_scores[entity_id].narrative = narrative

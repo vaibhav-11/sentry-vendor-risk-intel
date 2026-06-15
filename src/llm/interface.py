@@ -16,8 +16,11 @@ class BaseLLMClient(ABC):
 
     @staticmethod
     def _strip_think(text: str) -> str:
-        """Remove <think>…</think> chain-of-thought blocks emitted by reasoning models."""
-        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+        """Remove <think>…</think> blocks, including unclosed ones truncated by max_tokens."""
+        # First strip closed blocks, then strip any unclosed <think> tail to end-of-string.
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<think>.*', '', text, flags=re.DOTALL)
+        return text.strip()
 
     @abstractmethod
     async def _generate(
