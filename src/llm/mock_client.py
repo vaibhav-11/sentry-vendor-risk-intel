@@ -236,64 +236,48 @@ def _mock_narrative(
 ) -> str:
     """
     Build a vendor-specific narrative by interpolating the *actual* driver strings
-    received in the prompt — not a canned generic line. Each narrative references
-    the entity name, composite score, and at least one financial, operational, and
-    geopolitical/compliance driver, so every entity's narrative is distinguishable.
+    received in the prompt — not a canned generic line. Mirrors the crisp plain-text
+    format the real prompt requests: a one-line Status, 2-3 Key-risk bullets, and a
+    one-line Action. No markdown, so the dashboard renders it cleanly either way.
     """
     if risk_score >= 75:
         level = "elevated"
-        action = ("Immediate engagement with procurement leadership to evaluate "
-                  "contingency suppliers and request updated continuity documentation")
+        action = ("Engage procurement leadership now to evaluate contingency suppliers "
+                  "and request updated continuity documentation.")
     elif risk_score >= 50:
         level = "moderate"
-        action = ("Schedule a quarterly business review and request updated business "
-                  "continuity and financial disclosures")
+        action = ("Schedule a quarterly business review and request updated continuity "
+                  "and financial disclosures.")
     else:
         level = "manageable"
-        action = "Maintain standard monitoring cadence with an annual vendor assessment"
+        action = "Maintain standard monitoring with an annual vendor assessment."
 
-    # Surface up to the two strongest financial signals (e.g. Z-score + revenue
-    # growth) verbatim so acronyms like "Altman Z-Score" / country codes are never
-    # case-mangled. Drivers are quoted as-is, joined with semicolons.
-    fin = "; ".join(fin_drivers[:2]) if fin_drivers else None
-    ops = ops_drivers[0] if ops_drivers else None
-    # Prefer the most *specific* geopolitical driver (cross-strait / export-control
-    # exposure) over the generic country-risk baseline; fall back to compliance.
+    # Pick the single strongest signal per dimension, quoted verbatim so acronyms
+    # ("Altman Z-Score") and country codes are never case-mangled.
+    bullets: list[str] = []
+    if fin_drivers:
+        bullets.append(fin_drivers[0])
+    if ops_drivers:
+        bullets.append(ops_drivers[0])
+    # Prefer the most specific geopolitical driver (cross-strait / export-control)
+    # over the generic country-risk baseline; fall back to compliance.
     geo = None
     if geo_drivers:
         specific = [d for d in geo_drivers if "country risk index" not in d.lower()]
         geo = specific[0] if specific else geo_drivers[0]
     third = geo or (comp_drivers[0] if comp_drivers else None)
-
-    # Opening: status + the financial signals we actually have.
-    if fin:
-        opening = (
-            f"{entity_name} presents {level} third-party risk (composite {risk_score:.0f}/100). "
-            f"Financial signals — {fin}."
-        )
-    else:
-        opening = (
-            f"{entity_name} presents {level} third-party risk (composite {risk_score:.0f}/100), "
-            f"with limited financial telemetry available for this cycle."
-        )
-
-    # Middle: operational and geo/compliance specifics, quoted verbatim.
-    middle_bits: list[str] = []
-    if ops:
-        middle_bits.append(f"operationally, {ops}")
     if third:
-        middle_bits.append(third)
-    middle = (
-        ("On the supply side: " + "; ".join(middle_bits) + ".")
-        if middle_bits else
-        "No additional operational or geopolitical flags were raised this cycle."
-    )
+        bullets.append(third)
 
-    return (
-        f"{opening} {middle} "
-        f"These signals are specific to {entity_name} and warrant proportionate attention. "
-        f"Recommendation: {action}."
+    if not bullets:
+        bullets = ["No material risk flags raised this cycle."]
+
+    status = (
+        f"Status: {entity_name} presents {level} third-party risk "
+        f"(composite {risk_score:.0f}/100)."
     )
+    key_risks = "Key risks:\n" + "\n".join(f"- {b}" for b in bullets[:3])
+    return f"{status}\n{key_risks}\nAction: {action}"
 
 
 def _mock_alert_json(entity_name: str, score: float) -> str:
@@ -394,7 +378,7 @@ class MockLLMClient(BaseLLMClient):
     Routes requests based on keyword detection in the prompt.
     """
 
-    async def generate(
+    async def _generate(
         self,
         prompt: str,
         system: str = "",

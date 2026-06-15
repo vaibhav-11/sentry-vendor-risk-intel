@@ -78,15 +78,24 @@ def _build_vis_nodes(ps: PipelineState) -> list[dict]:
         if fp_record and hasattr(fp_record, 'provenance_anchors'):
             provenance_payload = {k: v.model_dump() for k, v in fp_record.provenance_anchors.items()}
 
-        # Tooltip surfaces the spend that drives the node's size (B2) and its VaR.
-        tooltip = (
-            f"{entity.name}\n"
-            f"Type: {entity.entity_type.value.title()}  |  {entity.hq_country or 'US'}\n"
-            f"Contract spend: ${spend:,.0f}\n"
-            f"Composite risk: {round(score, 1)}/100\n"
-            f"Value-at-Risk: ${var_val:,.0f}\n"
-            f"(node size ∝ √spend)"
-        )
+        # Tooltip surfaces the visual encoding: size ∝ spend, ring colour = risk band,
+        # ring thickness = exposure (VaR). The target itself is not scored.
+        if is_target:
+            tooltip = (
+                f"{entity.name}\n"
+                f"Type: Target — not scored  |  {entity.hq_country or 'US'}\n"
+                f"Contract spend: ${spend:,.0f}\n"
+                f"(node size ∝ √spend)"
+            )
+        else:
+            tooltip = (
+                f"{entity.name}\n"
+                f"Type: {entity.entity_type.value.title()}  |  {entity.hq_country or 'US'}\n"
+                f"Contract spend: ${spend:,.0f}\n"
+                f"Composite risk: {round(score, 1)}/100\n"
+                f"Value-at-Risk: ${var_val:,.0f}\n"
+                f"(node size ∝ √spend · ring colour = risk band · ring thickness = exposure)"
+            )
 
         nodes.append({
             "id":    entity.id,
@@ -193,6 +202,7 @@ def _build_risk_table(ps: PipelineState) -> list[dict]:
             "ticker":    entity.ticker or "—",
             "type":      entity.entity_type.value.title(),
             "country":   entity.hq_country or "—",
+            "industry":  entity.industry or "General Operations",
             "score":     round(score_obj.composite_score, 1),
             "level":     score_obj.risk_level.value,
             "fin":       round(score_obj.financial.score, 1),
@@ -356,85 +366,97 @@ def _save_last_run_cache(company: str, composites: dict[str, float]) -> None:
         logger.warning(f"Failed to write last-run cache: {e}")
 
 
+# Any vendor at or above this composite is worth a playbook even without a
+# structural flag (SPOF / single-source / financial distress).
+_PLAYBOOK_COMPOSITE_FLOOR = 35.0
+
+
 def _build_playbooks(ps: PipelineState) -> list[dict]:
     """
-    Generate action playbooks from the actual highest-risk entities in this run,
-    rather than two hardcoded generic emails. Targets the highest composite score
-    and any single-source vendors flagged in the internal registry.
+    Generate one action playbook for EVERY vendor with discernible risk, ranked by
+    severity (composite desc, then VaR desc). A vendor qualifies if its composite is
+    at/above the floor, OR it is a single point of failure, OR it is single-source,
+    OR it carries a financial-distress driver. The playbook flavour is chosen from
+    the dominant risk: single-source → dual-sourcing; SPOF → resilience; otherwise
+    continuity outreach. Each body cites that vendor's own top drivers.
     """
-    playbooks: list[dict] = []
+    candidates: list[dict] = []
 
-    scored = [
-        (eid, s) for eid, s in ps.risk_scores.items()
-        if (e := ps.entity_by_id(eid)) and e.depth_level > 0
-    ]
-    if not scored:
-        return playbooks
-
-    # 1. Highest-composite vendor → continuity / contingency outreach.
-    top_eid, top_score = max(scored, key=lambda kv: kv[1].composite_score)
-    top_entity = ps.entity_by_id(top_eid)
-    top_drivers = (top_score.financial.key_drivers + top_score.operational.key_drivers)[:3]
-    driver_text = "; ".join(top_drivers) if top_drivers else "elevated composite risk score"
-    playbooks.append({
-        "id": 1,
-        "title": f"Mitigate {top_entity.name} exposure (composite {top_score.composite_score:.0f}/100)",
-        "subject": f"Risk review & continuity assurance — {top_entity.name}",
-        "body": (
-            f"Dear {top_entity.name} Account Team,\n\n"
-            f"Our third-party risk monitoring has flagged {top_entity.name} at a composite "
-            f"risk score of {top_score.composite_score:.0f}/100 ({top_score.risk_level.value}). "
-            f"Key drivers: {driver_text}.\n\n"
-            f"To support continuity planning, please provide your current business continuity "
-            f"plan and any updated financial disclosures within 5 business days.\n\n"
-            f"Regards,\nStrategic Procurement & Risk Operations"
-        ),
-    })
-
-    # 2. Single-source vendor (if any) → dual-sourcing initiation.
-    single_source = None
-    for eid, s in scored:
-        fp = ps.footprint_data.get(eid)
-        if fp and fp.internal_record and fp.internal_record.single_source:
-            single_source = (eid, s, fp)
-            break
-
-    if single_source:
-        eid, s, fp = single_source
+    for eid, s in ps.risk_scores.items():
         e = ps.entity_by_id(eid)
-        playbooks.append({
-            "id": 2,
-            "title": f"Initiate dual-sourcing for {e.name} (single-source dependency)",
-            "subject": f"Dual-sourcing & resilience plan — {e.name}",
-            "body": (
+        if not e or e.depth_level <= 0:
+            continue
+
+        # Structural flags pulled from footprint + graph metrics.
+        fp = ps.footprint_data.get(eid)
+        single_source = bool(fp and fp.internal_record and fp.internal_record.single_source)
+        is_spof = False
+        var_val = 0.0
+        if ps.graph_metrics and eid in ps.graph_metrics.node_metrics:
+            nm = ps.graph_metrics.node_metrics[eid]
+            is_spof = nm.is_single_point_of_failure
+            var_val = nm.value_at_risk_usd
+        distress = any("distress" in d.lower() for d in s.financial.key_drivers)
+
+        if not (s.composite_score >= _PLAYBOOK_COMPOSITE_FLOOR
+                or is_spof or single_source or distress):
+            continue
+
+        candidates.append({
+            "eid": eid, "entity": e, "score": s,
+            "single_source": single_source, "is_spof": is_spof,
+            "var": var_val, "distress": distress,
+        })
+
+    # Most severe first: composite, then exposure as the tie-breaker.
+    candidates.sort(key=lambda c: (c["score"].composite_score, c["var"]), reverse=True)
+
+    playbooks: list[dict] = []
+    for idx, c in enumerate(candidates, start=1):
+        e, s = c["entity"], c["score"]
+        drivers = (s.financial.key_drivers + s.operational.key_drivers
+                   + s.compliance.key_drivers + s.geopolitical.key_drivers)
+        drivers = [d for d in drivers if d][:3]
+        driver_text = "; ".join(drivers) if drivers else "elevated composite risk score"
+
+        if c["single_source"]:
+            title = f"Initiate dual-sourcing for {e.name} (single-source dependency)"
+            subject = f"Dual-sourcing & resilience plan — {e.name}"
+            body = (
                 f"Dear Sourcing Operations Team,\n\n"
-                f"{e.name} is currently a single-source vendor with no approved alternate "
-                f"(composite risk {s.composite_score:.0f}/100). This represents a concentrated "
-                f"operational dependency.\n\n"
+                f"{e.name} is a single-source vendor with no approved alternate "
+                f"(composite risk {s.composite_score:.0f}/100, {s.risk_level.value}). "
+                f"Key drivers: {driver_text}.\n\n"
                 f"Please initiate qualification of at least one alternate supplier and report "
                 f"a target qualification timeline within 10 business days.\n\n"
                 f"Regards,\nProcurement Resilience Office"
-            ),
-        })
-    else:
-        # Fall back to the second-highest composite vendor.
-        ranked = sorted(scored, key=lambda kv: kv[1].composite_score, reverse=True)
-        if len(ranked) > 1:
-            eid, s = ranked[1]
-            e = ps.entity_by_id(eid)
-            playbooks.append({
-                "id": 2,
-                "title": f"Enhanced monitoring — {e.name} (composite {s.composite_score:.0f}/100)",
-                "subject": f"Quarterly risk check-in — {e.name}",
-                "body": (
-                    f"Dear {e.name} Account Team,\n\n"
-                    f"{e.name} carries a composite risk score of {s.composite_score:.0f}/100 "
-                    f"({s.risk_level.value}) in our current assessment cycle. We are scheduling "
-                    f"an enhanced quarterly review.\n\n"
-                    f"Please confirm availability and share updated compliance certifications.\n\n"
-                    f"Regards,\nVendor Risk Management"
-                ),
-            })
+            )
+        elif c["is_spof"]:
+            title = f"Resilience review — {e.name} (single point of failure)"
+            subject = f"SPOF mitigation & contingency — {e.name}"
+            body = (
+                f"Dear Sourcing Operations Team,\n\n"
+                f"{e.name} is a single point of failure in the supply network "
+                f"(composite risk {s.composite_score:.0f}/100, {s.risk_level.value}). "
+                f"Key drivers: {driver_text}.\n\n"
+                f"Please document downstream dependents and stand up a contingency plan, "
+                f"with an updated business continuity plan requested within 10 business days.\n\n"
+                f"Regards,\nProcurement Resilience Office"
+            )
+        else:
+            title = f"Mitigate {e.name} exposure (composite {s.composite_score:.0f}/100)"
+            subject = f"Risk review & continuity assurance — {e.name}"
+            body = (
+                f"Dear {e.name} Account Team,\n\n"
+                f"Our third-party risk monitoring has flagged {e.name} at a composite "
+                f"risk score of {s.composite_score:.0f}/100 ({s.risk_level.value}). "
+                f"Key drivers: {driver_text}.\n\n"
+                f"To support continuity planning, please provide your current business continuity "
+                f"plan and any updated financial disclosures within 5 business days.\n\n"
+                f"Regards,\nStrategic Procurement & Risk Operations"
+            )
+
+        playbooks.append({"id": idx, "title": title, "subject": subject, "body": body})
 
     return playbooks
 

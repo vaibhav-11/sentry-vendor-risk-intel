@@ -6,6 +6,7 @@ Switch backends via LLM_BACKEND env var: mock | ollama | vllm
 from abc import ABC, abstractmethod
 from typing import Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,22 @@ logger = logging.getLogger(__name__)
 class BaseLLMClient(ABC):
     """Common interface for all LLM backends."""
 
+    @staticmethod
+    def _strip_think(text: str) -> str:
+        """Remove <think>…</think> chain-of-thought blocks emitted by reasoning models."""
+        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
     @abstractmethod
+    async def _generate(
+        self,
+        prompt: str,
+        system: str = "",
+        temperature: float = 0.3,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Backend-specific completion implementation."""
+        ...
+
     async def generate(
         self,
         prompt: str,
@@ -21,8 +37,11 @@ class BaseLLMClient(ABC):
         temperature: float = 0.3,
         max_tokens: int = 1024,
     ) -> str:
-        """Generate a single completion."""
-        ...
+        """Generate a single completion, stripping any <think> reasoning blocks."""
+        return self._strip_think(
+            await self._generate(prompt, system=system, temperature=temperature,
+                                 max_tokens=max_tokens)
+        )
 
     @abstractmethod
     async def generate_batch(

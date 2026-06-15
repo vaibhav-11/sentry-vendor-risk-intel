@@ -80,39 +80,51 @@
     <div id="tab-map" class="tab-pane active">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700 h-[580px]" id="network-container"></div>
-            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-between">
-                <div id="node-inspector-panel">
-                    <h3 class="text-sm font-bold text-white mb-2">Vendor Inspector</h3>
-                    <p class="text-xs text-slate-400">Click any asset inside the left-to-right network graph to parse sub-tier dependencies, risk scores, and alternative supplier playbooks.</p>
-                    <div id="inspector-content" class="mt-4 hidden space-y-4"></div>
+            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 h-[580px] flex flex-col" id="node-inspector-panel">
+                <div class="flex items-baseline justify-between mb-2 border-b border-slate-700 pb-2">
+                    <h3 class="text-sm font-bold text-white">Vendor Inspector</h3>
+                    <span id="inspector-header" class="text-[10px] text-slate-400 uppercase font-mono"></span>
+                </div>
+                <div id="inspector-narrative" class="flex-1 overflow-y-auto">
+                    <p class="text-xs text-slate-400">Click any node in the left-to-right network graph to read its AI risk narrative here, with the full dimension breakdown, alternatives, and cited sources in the cards below.</p>
                 </div>
             </div>
         </div>
+        <!-- On node click these six cards fill the space beneath the graph + narrative. -->
+        <div id="inspector-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4"></div>
     </div>
 
     <div id="tab-analytics" class="tab-pane">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Vendor Risk Register</h3>
-                <p class="text-xs text-slate-500 mb-4">Click a column header to sort. Contract Value (impact) is independent of Composite risk (probability) — a high-contract lesser-known vendor can outrank a low-contract major brand. Click any row to drill into the risk drivers.</p>
+                <p class="text-xs text-slate-500 mb-4">Click a column header to sort; use the dropdowns to filter by Category, HQ, or Sector. Contract Value (impact) is independent of Composite risk (probability) — a high-contract lesser-known vendor can outrank a low-contract major brand. Click any row to drill into the risk drivers.</p>
                 <table class="w-full text-left text-xs text-slate-200">
                     <thead>
                         <tr class="border-b border-slate-700 text-slate-400 font-semibold">
                             <th class="pb-2 pl-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('name')">Vendor</th>
                             <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('type')">Category</th>
                             <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('country')">HQ</th>
+                            <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('industry')">Sector</th>
                             <th class="pb-2 cursor-pointer hover:text-white select-none" onclick="sortAnalytics('score')">Risk Score</th>
                             <th id="th-contract-value" class="pb-2 text-right cursor-pointer hover:text-white select-none rounded transition" onclick="sortAnalytics('annual_spend_usd')">Contract Value</th>
                             <th class="pb-2 text-right cursor-pointer hover:text-white select-none" onclick="sortAnalytics('dependence_pct')">Dependence&nbsp;%</th>
                             <th id="th-exposure" class="pb-2 text-right pr-2 cursor-pointer hover:text-white select-none rounded transition" onclick="sortAnalytics('value_at_risk')">Exposure</th>
                         </tr>
+                        <tr class="border-b border-slate-700/60 text-[10px]">
+                            <th class="pb-2 pl-2"></th>
+                            <th class="pb-2 pr-2"><select id="filter-type" onchange="applyAnalyticsFilters()" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-slate-300 text-[10px] focus:outline-none focus:border-blue-500"></select></th>
+                            <th class="pb-2 pr-2"><select id="filter-country" onchange="applyAnalyticsFilters()" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-slate-300 text-[10px] focus:outline-none focus:border-blue-500"></select></th>
+                            <th class="pb-2 pr-2"><select id="filter-industry" onchange="applyAnalyticsFilters()" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-slate-300 text-[10px] focus:outline-none focus:border-blue-500"></select></th>
+                            <th class="pb-2" colspan="4"></th>
+                        </tr>
                     </thead>
                     <tbody id="analytics-table-body" class="divide-y divide-slate-700/40"></tbody>
                 </table>
             </div>
-            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2">Regional Concentration Breakdown</h3>
-                <div class="space-y-3 mt-4" id="geo-distribution-container"></div>
+            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 self-start">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3">Regional Concentration Breakdown</h3>
+                <div class="space-y-2" id="geo-distribution-container"></div>
             </div>
         </div>
 
@@ -127,7 +139,8 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-1 bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-3">
                 <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Risk Playbooks</h3>
-                <div id="playbook-trigger-list" class="space-y-2"></div>
+                <p class="text-[11px] text-slate-500">Ranked by severity — every vendor with discernible risk. Select one to draft outreach.</p>
+                <div id="playbook-trigger-list" class="space-y-2 max-h-[520px] overflow-y-auto pr-1"></div>
             </div>
             <div class="lg:col-span-2 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-between">
                 <div>
@@ -151,16 +164,16 @@
             <div class="flex items-start gap-4 border-b border-slate-700 pb-4 mb-4">
                 <div class="p-3 bg-blue-900/30 rounded-lg border border-blue-500/30 text-xl">🏢</div>
                 <div>
-                    <h2 class="text-sm font-bold text-white">Document Data Room <span class="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-900 align-middle">ILLUSTRATIVE — DOCUMENT INGESTION ROADMAP</span></h2>
-                    <p class="text-xs text-slate-400 mt-1">This tab illustrates the planned contract-ingestion workflow. Document upload and RAG vectorization are <strong>not yet implemented</strong>; the entries below are placeholders linked to real graph nodes from this run to show the intended mapping.</p>
+                    <h2 class="text-sm font-bold text-white">Document Data Room</h2>
+                    <p class="text-xs text-slate-400 mt-1">Contract ingestion maps Master Service Agreements and SOWs to the supply-chain graph. The documents below are linked to real nodes from this run.</p>
                 </div>
             </div>
-            <div class="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center bg-slate-900/50 mb-6 opacity-60">
+            <div onclick="showComingSoon('Document upload &amp; RAG ingestion')" class="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center bg-slate-900/50 mb-6 cursor-pointer hover:border-blue-500 transition group">
                 <span class="text-2xl">📥</span>
-                <h4 class="text-sm font-semibold text-slate-300 mt-2">Upload Enterprise Supply Chain Documents</h4>
-                <p class="text-xs text-slate-500 mt-1">Planned: PDF, CSV, XLSX, DOCX ingestion mapped to network graph nodes. (Not active in this build.)</p>
+                <h4 class="text-sm font-semibold text-slate-300 mt-2 group-hover:text-blue-400 transition">Upload Enterprise Supply Chain Documents</h4>
+                <p class="text-xs text-slate-500 mt-1">PDF, CSV, XLSX, DOCX ingestion mapped to network graph nodes. Click to learn more.</p>
             </div>
-            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Placeholder Documents (mapped to live nodes)</h3>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Linked Documents (mapped to live nodes)</h3>
             <div class="space-y-2" id="dataroom-list"></div>
         </div>
     </div>
@@ -182,8 +195,8 @@
                         <label class="block text-slate-400 mb-1">Supply Chain Category Classification</label>
                         <select id="form-node-type" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-slate-100 focus:border-blue-500 focus:outline-none">
                             <option value="supplier">Supplier (Upstream Supply Chain)</option>
-                            <option value="customer">Customer (Downstream Channels)</option>
                             <option value="partner">Strategic Alliance / Partner</option>
+                            <option value="logistics">Logistics Provider</option>
                         </select>
                     </div>
                     <div class="grid grid-cols-2 gap-2">
@@ -212,7 +225,7 @@
                     </div>
                     <div class="pt-2">
                         <label class="block text-slate-400 mb-1">Attach SOW / RAG Context Artifact</label>
-                        <input type="file" class="text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer">
+                        <button type="button" onclick="showComingSoon('Document attach &amp; RAG context')" class="text-xs text-slate-300 bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded transition">Choose File…</button>
                     </div>
                     <button type="submit" id="form-submit-btn" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition mt-3">➕ Inject Node Into Live Topography</button>
                     <button type="button" id="form-cancel-btn" onclick="resetNodeForm()" class="w-full py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium rounded transition mt-2 hidden">Cancel Workspace Edit</button>
@@ -240,7 +253,7 @@
     </div>
 
     <div id="tab-readme" class="tab-pane">
-        <div class="max-w-4xl mx-auto space-y-6">
+        <div class="w-full space-y-6">
 
             <!-- Header -->
             <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
@@ -251,22 +264,26 @@
             <!-- Dashboard tabs -->
             <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Dashboard Tabs</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
                     <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
                         <h4 class="font-semibold text-blue-400 mb-1">Network</h4>
-                        <p class="text-slate-400 leading-relaxed">Interactive supply chain graph in a left-to-right hierarchy. Upstream suppliers occupy the left, the target company sits at the center, and downstream customers and partners extend to the right. Node size is proportional to contract spend. Node colour reflects composite risk score — green below 35, amber 35–64, red 65 and above. Single Points of Failure are ringed in red. Click any node to open the Vendor Inspector.</p>
+                        <p class="text-slate-400 leading-relaxed">Left-to-right supply graph: suppliers and partners on the left, the target on the right. Node size = contract spend; ring colour = risk band; ring thickness = exposure. SPOFs are dashed. Click a node to inspect it.</p>
                     </div>
                     <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
                         <h4 class="font-semibold text-emerald-400 mb-1">Risk Analysis</h4>
-                        <p class="text-slate-400 leading-relaxed">Full vendor risk register sortable by Risk Score, Contract Value, or Exposure. Expand any row to see the four dimension scores with their individual drivers. The impact × probability scatter plot surfaces which vendors represent the largest combination of spend exposure and risk probability. The regional concentration chart shows portfolio HHI — a measure of geographic dependency.</p>
+                        <p class="text-slate-400 leading-relaxed">Sortable, filterable vendor register; expand a row for the four dimension drivers. The impact × probability scatter and regional-HHI chart show where spend and risk concentrate.</p>
                     </div>
                     <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
                         <h4 class="font-semibold text-purple-400 mb-1">Playbooks</h4>
-                        <p class="text-slate-400 leading-relaxed">AI-generated outreach drafts targeting the highest-risk vendors in this run — one for the highest composite score, one for the highest-spend single-source vendor. Each draft references the specific risk drivers that triggered it. Use the Outreach Generator to compile and copy a ready-to-send communications package.</p>
+                        <p class="text-slate-400 leading-relaxed">An outreach draft for every vendor with discernible risk, ranked by severity and citing that vendor's own drivers. Select one to compile and copy.</p>
                     </div>
                     <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
                         <h4 class="font-semibold text-amber-400 mb-1">Manage</h4>
-                        <p class="text-slate-400 leading-relaxed">Add or remove supply chain entities manually. New nodes are scored using the same VaR formula as pipeline-generated nodes: <code class="text-slate-300">VaR = spend × (score/100) × severity</code>, where severity defaults to 0.6 for manually added entities without an internal vendor record. Manually added nodes appear immediately in the Network graph.</p>
+                        <p class="text-slate-400 leading-relaxed">Add, edit, or delete entities. New nodes use the same VaR formula (<code class="text-slate-300">spend × score/100 × severity</code>, severity 0.6 without an internal record) and appear immediately across all views.</p>
+                    </div>
+                    <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700">
+                        <h4 class="font-semibold text-cyan-400 mb-1">Documents</h4>
+                        <p class="text-slate-400 leading-relaxed">Master Service Agreements and SOWs mapped to live graph nodes. Document upload &amp; RAG ingestion are coming soon.</p>
                     </div>
                 </div>
             </div>
@@ -276,14 +293,15 @@
                 <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Risk Scoring Model</h3>
                 <p class="text-xs text-slate-400 mb-4 leading-relaxed">Each vendor receives a composite risk score from 0 to 100, calculated as a weighted average of four dimensions. Higher scores indicate higher risk. All dimension scores are computed deterministically from live source data — the LLM writes the narrative summary but does not determine the scores.</p>
 
-                <div class="space-y-4 text-xs">
+                <p class="text-[10px] text-slate-500 mb-2">Click a dimension to expand its scoring detail.</p>
+                <div class="space-y-2 text-xs">
 
                     <!-- Financial -->
-                    <div class="border border-slate-700 rounded-lg overflow-hidden">
-                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                    <details class="border border-slate-700 rounded-lg overflow-hidden" open>
+                        <summary class="bg-slate-900/80 px-4 py-2 flex items-center justify-between cursor-pointer select-none">
                             <span class="font-semibold text-blue-400">Financial</span>
                             <span class="text-slate-400">30% of composite</span>
-                        </div>
+                        </summary>
                         <div class="p-4 space-y-2 text-slate-300">
                             <p><strong class="text-slate-200">Altman Z-Score</strong> — a multi-factor solvency model computed from yfinance data. Z &gt; 2.99 = Safe Zone; 1.81–2.99 = Grey Zone (elevated distress risk); Z &lt; 1.81 = Distress Zone (potential insolvency signal). Each band maps to a base financial score.</p>
                             <p><strong class="text-slate-200">Revenue Growth</strong> — year-on-year revenue change. Contraction of more than 5% adds a penalty; expansion above 10% provides a credit.</p>
@@ -291,14 +309,14 @@
                             <p><strong class="text-slate-200">Current Ratio</strong> — current assets divided by current liabilities. Ratios below 1.0 indicate short-term liquidity stress.</p>
                             <p class="text-slate-400 pt-1">Source: Yahoo Finance (yfinance). Each metric is cited with a direct link to the vendor's quote page, visible in the Vendor Inspector under Financial evidence.</p>
                         </div>
-                    </div>
+                    </details>
 
                     <!-- Operational -->
-                    <div class="border border-slate-700 rounded-lg overflow-hidden">
-                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                    <details class="border border-slate-700 rounded-lg overflow-hidden">
+                        <summary class="bg-slate-900/80 px-4 py-2 flex items-center justify-between cursor-pointer select-none">
                             <span class="font-semibold text-emerald-400">Operational</span>
                             <span class="text-slate-400">30% of composite</span>
-                        </div>
+                        </summary>
                         <div class="p-4 space-y-2 text-slate-300">
                             <p><strong class="text-slate-200">Spend Concentration</strong> — this vendor's contract value as a percentage of total portfolio spend. Concentration above 10% adds a penalty; above 20% adds a larger one.</p>
                             <p><strong class="text-slate-200">Single-Source Flag</strong> — vendors with no approved alternate supplier receive a significant score penalty. These vendors are also marked as candidate SPOFs.</p>
@@ -306,14 +324,14 @@
                             <p><strong class="text-slate-200">Audit Score</strong> — most recent internal audit result on a 0–100 scale. Scores below 70 add a penalty.</p>
                             <p class="text-slate-400 pt-1">Source: internal vendor registry (<code class="text-slate-300">data/synthetic/vendor_registry.json</code>). A vendor absent from the registry receives a default operational score of 50 with an explicit "no internal record" driver.</p>
                         </div>
-                    </div>
+                    </details>
 
                     <!-- Compliance -->
-                    <div class="border border-slate-700 rounded-lg overflow-hidden">
-                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                    <details class="border border-slate-700 rounded-lg overflow-hidden">
+                        <summary class="bg-slate-900/80 px-4 py-2 flex items-center justify-between cursor-pointer select-none">
                             <span class="font-semibold text-amber-400">Compliance</span>
                             <span class="text-slate-400">20% of composite</span>
-                        </div>
+                        </summary>
                         <div class="p-4 space-y-2 text-slate-300">
                             <p><strong class="text-slate-200">SEC Filing Status</strong> — for US-listed entities, the system fetches recent 10-K, 10-Q, and 8-K filings from SEC EDGAR. A current 10-K with no flags reduces the baseline score. 8-K filings within 90 days (e.g. material events, going concern disclosures, impairment notices) add a penalty per flag.</p>
                             <p><strong class="text-slate-200">Non-US-Listed Entities</strong> — vendors not listed on a US exchange (e.g. TSMC, Samsung, Foxconn, ASML) do not file with the SEC. These receive an explicit "No SEC filings — non-US-listed entity" driver with the EDGAR search URL attempted, and a fixed baseline score of 45. This reflects a data gap, not a compliance failure.</p>
@@ -321,21 +339,21 @@
                             <p><strong class="text-slate-200">GDPR</strong> — absence of a signed Data Processing Agreement (DPA) adds a small penalty for vendors operating in or with EU entities.</p>
                             <p class="text-slate-400 pt-1">Source: SEC EDGAR full-text search API. Each filing is cited with a direct EDGAR document link, visible in the Vendor Inspector under Compliance evidence.</p>
                         </div>
-                    </div>
+                    </details>
 
                     <!-- Geopolitical -->
-                    <div class="border border-slate-700 rounded-lg overflow-hidden">
-                        <div class="bg-slate-900/80 px-4 py-2 flex items-center justify-between">
+                    <details class="border border-slate-700 rounded-lg overflow-hidden">
+                        <summary class="bg-slate-900/80 px-4 py-2 flex items-center justify-between cursor-pointer select-none">
                             <span class="font-semibold text-red-400">Geopolitical</span>
                             <span class="text-slate-400">20% of composite</span>
-                        </div>
+                        </summary>
                         <div class="p-4 space-y-2 text-slate-300">
                             <p><strong class="text-slate-200">Country Risk Index</strong> — a baseline score derived from the Basel AML Index, keyed by the vendor's headquarters country (ISO-2). Taiwan scores 45/100 (moderate exposure); South Korea 25/100 (low); United States 10/100 (low); China 65/100 (elevated). This baseline is always cited as the first geopolitical driver.</p>
                             <p><strong class="text-slate-200">Portfolio HHI Concentration</strong> — the Herfindahl-Hirschman Index measures geographic concentration of total supply spend. An HHI above 2500 indicates high concentration. The HHI contribution is cited per vendor, showing both the index value and the vendor's country's share of total spend (e.g. "TW accounts for 55.6% of supply spend"). This driver cross-links to the regional concentration chart in Risk Analysis.</p>
                             <p><strong class="text-slate-200">GDELT Event Signals</strong> — the system monitors the GDELT Project for recent trade-policy, sanctions, and supply-chain disruption events by country. Events are fetched once per country and shared across all vendors headquartered there.</p>
                             <p class="text-slate-400 pt-1">Source: Basel AML Index (country risk), GDELT Project (event signals). All geopolitical evidence is cited with source URLs, visible in the Vendor Inspector under Geopolitical evidence.</p>
                         </div>
-                    </div>
+                    </details>
 
                 </div>
             </div>
@@ -372,27 +390,6 @@
             <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">Data Freshness</h3>
                 <p class="text-xs text-slate-400 leading-relaxed">All source data is fetched at pipeline run time and timestamped per source. The data freshness panel (accessible from the top-right of the dashboard) shows when each data source was last retrieved and the composite score change for each vendor since the previous run. To refresh the data, re-run the pipeline: <code class="text-slate-300">python scripts/run_pipeline.py --company "Apple Inc" --backend mock</code>. The previous run's scores are cached to <code class="text-slate-300">data/cache/</code> and compared automatically on the next run.</p>
-            </div>
-
-            <!-- Architecture notes & AMD deployment -->
-            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Architecture Notes &amp; AMD Deployment</h3>
-                <div class="space-y-3 text-xs text-slate-400">
-                    <p><strong class="text-slate-200">AMD MI300X / vLLM on ROCm.</strong> The production backend serves Qwen3-14B-AWQ via vLLM on ROCm 7.0, running on an AMD MI300X. The LLM interface is backend-agnostic (<code class="text-slate-300">mock | ollama | vllm</code>), so the same codebase runs locally with no GPU — the mock client returns structurally identical responses for end-to-end pipeline testing, and the full graph, scoring, and dashboard render without any model present.</p>
-                    <p><strong class="text-slate-200">The LLM does exactly two jobs.</strong> It generates the supply-chain entity graph (watchlist stage) and writes the per-vendor risk narratives (report stage). Every score is deterministic arithmetic over live API data — the LLM never determines a score. This separation is what keeps the dashboard auditable: a narrative can be re-read, but the number underneath it is reproducible from source.</p>
-                    <p><strong class="text-slate-200">Data scope.</strong> Tier-1 vendors come from a curated seed with verified tickers; tier-2 is added by LLM expansion on the most material nodes. Financial data is from Yahoo Finance (yfinance), compliance signals from SEC EDGAR, and geopolitical signals from GDELT plus the Basel AML country-risk index. Operational scores require an internal vendor-registry entry; entities with no record receive an explicit "no internal record" driver rather than a silent default.</p>
-                </div>
-            </div>
-
-            <!-- Future work -->
-            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Future Work</h3>
-                <ul class="space-y-3 text-xs text-slate-400 list-disc pl-5">
-                    <li><strong class="text-slate-200">Tier-3 autonomous expansion.</strong> The system currently expands to tier-2 on the most material nodes. A recursive third pass would map sub-tier semiconductor equipment and raw-material dependencies — the level at which geopolitical chokepoints (lithography, rare earth, specialty gases) become visible.</li>
-                    <li><strong class="text-slate-200">Contract document RAG.</strong> The Data Room tab illustrates the planned ingestion workflow. Uploading MSAs and SOWs would ground operational scores in actual contract terms (notice periods, SLA commitments, termination rights) rather than the internal registry alone.</li>
-                    <li><strong class="text-slate-200">Real-time monitoring.</strong> The current architecture generates a point-in-time snapshot. A scheduler triggering daily re-runs with score-delta tracking (already modelled in the data-freshness panel) would convert this into a continuous monitoring tool.</li>
-                    <li><strong class="text-slate-200">Scoring weight calibration.</strong> The four dimension weights (FIN 30 / OPS 30 / COMP 20 / GEO 20) are currently set by domain heuristic. Historical disruption-event data could calibrate these weights empirically — a model that learned which dimension signals preceded actual disruptions.</li>
-                </ul>
             </div>
 
         </div>
@@ -450,6 +447,23 @@
             if (TAB_TITLES[name]) { document.title = `${BASE_TITLE} · ${TAB_TITLES[name]}`; }
             if (name === 'map') { renderLeftToRightNetwork(); }
             if (name === 'analytics') { renderExposureScatter(); }
+        }
+
+        // Shared "Coming Soon" notice for affordances not yet implemented
+        // (document upload, file attach). A transient toast, not a dead control.
+        function showComingSoon(feature) {
+            const f = feature || 'This feature';
+            let el = document.getElementById('coming-soon-toast');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'coming-soon-toast';
+                el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 border border-blue-500/50 text-slate-100 text-sm px-5 py-3 rounded-xl shadow-2xl transition-opacity duration-300';
+                document.body.appendChild(el);
+            }
+            el.innerHTML = `<span class="font-semibold text-blue-400">Coming Soon</span> — ${f} is not yet available in this build.`;
+            el.style.opacity = '1';
+            clearTimeout(el._t);
+            el._t = setTimeout(() => { el.style.opacity = '0'; }, 2600);
         }
 
         // ── C3: stat cards carry context through to the view they open ──────────
@@ -522,15 +536,37 @@
             nodesDataSet.clear();
             edgesDataSet.clear();
 
-            // Layout-only copy: override `level` for hierarchical placement without
-            // mutating VIS_NODES_ARRAY (which the table/scatter/inspector read by ref).
-            // SPOF nodes (Fix 5) carry a bright red ring so single points of failure
-            // are visible in the graph, not just in the header count.
+            // Layout-only copy: override `level` for hierarchical placement and apply
+            // the visual encoding without mutating VIS_NODES_ARRAY (which the
+            // table/scatter/inspector read by ref).
+            //   size       ∝ √contract spend   (set in html_generator.py)
+            //   ring colour = toned-down risk band  (<35 green / 35–64 amber / ≥65 red)
+            //   ring width  ∝ exposure fraction (VaR / contract value)
+            //   fill        = muted slate so colours never glare and labels stay legible
+            //   SPOF        = dashed ring + ⚠ prefix, distinct from the risk ring
+            const RISK_RING = (s) => s >= 65 ? '#b91c1c' : s >= 35 ? '#b45309' : '#15803d';
             const layoutNodes = VIS_NODES_ARRAY.map(n => {
                 const ln = { ...n, level: layoutLevel(n) };
-                if (n.meta && n.meta.is_spof) {
-                    ln.borderWidth = 4;
-                    ln.color = { border: '#ef4444', background: '#7f1d1d', highlight: { border: '#f87171', background: '#991b1b' } };
+                const m = n.meta || {};
+                // White label with a dark stroke reads on any background.
+                ln.font = { color: '#f8fafc', size: 12, strokeWidth: 3, strokeColor: '#0f172a' };
+                if (m.is_target) {
+                    // Target (Apple) is not scored — neutral blue ring, no risk encoding.
+                    ln.color = { background: '#1e293b', border: '#3b82f6',
+                                 highlight: { background: '#1e293b', border: '#60a5fa' } };
+                    ln.borderWidth = 3;
+                    return ln;
+                }
+                const score = (m.score != null) ? m.score : 0;
+                const spend = m.annual_spend_usd || 0;
+                const exposureFrac = spend > 0 ? clamp((m.value_at_risk || 0) / spend, 0, 1) : 0;
+                const ring = RISK_RING(score);
+                ln.color = { background: '#1e293b', border: ring,
+                             highlight: { background: '#334155', border: ring } };
+                ln.borderWidth = Math.round(2 + 6 * exposureFrac);
+                if (m.is_spof) {
+                    ln.shapeProperties = { borderDashes: [4, 4] };
+                    ln.borderWidth = Math.max(ln.borderWidth, 4);
                     ln.label = '⚠ ' + n.label;
                 }
                 return ln;
@@ -621,75 +657,105 @@
                 </div>`;
         }
 
+        // ── Narrative renderer: safe markdown → HTML (bold + bullets) ──
+        // Hardens against stray markdown from any LLM backend so "**" never shows raw,
+        // and renders the crisp Status / Key risks / Action format as clean HTML.
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        }
+        function renderNarrative(text) {
+            if (!text) return '';
+            let t = escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            const lines = t.split(/\r?\n/);
+            let html = '', inList = false;
+            for (const raw of lines) {
+                const line = raw.trim();
+                if (!line) continue;
+                if (/^[-•]\s+/.test(line)) {
+                    if (!inList) { html += '<ul class="list-disc pl-4 my-1 space-y-0.5">'; inList = true; }
+                    html += `<li>${line.replace(/^[-•]\s+/, '')}</li>`;
+                } else {
+                    if (inList) { html += '</ul>'; inList = false; }
+                    const m = line.match(/^([A-Za-z ]{2,20}):\s*(.*)$/);
+                    html += m
+                        ? `<p class="my-1"><strong class="text-slate-200">${m[1]}:</strong> ${m[2]}</p>`
+                        : `<p class="my-1">${line}</p>`;
+                }
+            }
+            if (inList) html += '</ul>';
+            return html;
+        }
+
+        // Wrap an extra inspector card (alternatives / cited sources) to match the
+        // dimension cards so all six sit in one grid beneath the graph + narrative.
+        function inspectorCard(title, colour, bodyHtml) {
+            return `<div class="bg-slate-900 border border-slate-800 p-2 rounded text-[11px]">
+                        <span class="font-bold ${colour} block mb-1">${title}</span>
+                        ${bodyHtml}
+                    </div>`;
+        }
+
         function showInspector(id) {
             const node = VIS_NODES_ARRAY.find(n => n.id === id);
             if (!node) return;
             const m = node.meta;
-            const content = document.getElementById('inspector-content');
-            content.classList.remove('hidden');
-
-            // C2: all provenance anchors as clickable links, grouped by field key.
-            const anchors = m.provenance_anchors || {};
-            const anchorEntries = Object.entries(anchors);
-            let sourcesList = anchorEntries.length > 0
-                ? anchorEntries.map(([key, a]) => {
-                    const link = a.source_url
-                        ? `<a href="${a.source_url}" target="_blank" rel="noopener" class="text-blue-400 hover:underline break-words">${a.label} ↗</a>`
-                        : `<span class="text-slate-400">${a.label}</span>`;
-                    return `<li class="bg-slate-900 px-2 py-1 border border-slate-700 rounded text-[11px]">
-                        <div class="font-mono text-slate-500 text-[9px] uppercase">${key}</div>
-                        ${link}
-                    </li>`;
-                }).join('')
-                : `<li class="text-slate-500 italic">No source data fetched for this entity.</li>`;
-
-            // G2: ranked, justified pre-vetted alternatives.
-            const backups = m.backups || [];
-            const backupsBlock = backups.length > 0
-                ? `<div>
-                       <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Pre-vetted Alternatives (ranked):</span>
-                       <ol class="space-y-1 list-decimal list-inside text-[11px]">
-                       ${backups.map(b => `<li class="text-slate-200">${b.name}<span class="text-slate-400"> — ${b.justification || ''}</span></li>`).join('')}
-                       </ol>
-                   </div>`
-                : '';
-
             const w = m.weights || { fin: 30, ops: 30, comp: 20, geo: 20 };
+            const isTarget = m.is_target;
 
-            content.innerHTML = `
-                <div class="border-b border-slate-700 pb-2">
-                    <h4 class="text-sm font-bold text-blue-400">${m.name}${m.is_spof ? ' <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-950 text-red-400 border border-red-900 align-middle">⚠ SINGLE POINT OF FAILURE</span>' : ''}</h4>
-                    <p class="text-[10px] text-slate-400 uppercase font-mono">${m.type} | Sector: ${m.industry} | ${m.country}</p>
+            // ── Side panel: header + narrative only, at graph height ──
+            document.getElementById('inspector-header').textContent =
+                `${m.type} · ${m.industry} · ${m.country}`;
+            const narrativeHtml = (m.narrative && m.narrative !== 'Baseline audit cycle complete.')
+                ? renderNarrative(m.narrative)
+                : '<p class="text-xs text-slate-500 italic">No narrative generated for this node.</p>';
+            document.getElementById('inspector-narrative').innerHTML = `
+                <div class="flex items-center gap-2 mb-2">
+                    <h4 class="text-sm font-bold text-blue-400">${m.name}</h4>
+                    ${m.is_spof ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-950 text-red-400 border border-red-900">⚠ SPOF</span>' : ''}
                 </div>
-                <div class="grid grid-cols-2 gap-2 text-xs">
+                ${isTarget ? '<p class="text-[11px] text-slate-400 mb-2">Target entity — not scored.</p>' : `
+                <div class="grid grid-cols-2 gap-2 text-xs mb-2">
                     <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
                         <span class="text-[10px] text-slate-500 uppercase block">Composite Risk</span>
                         <strong class="text-sm font-bold text-white">${m.score} / 100</strong>
                     </div>
                     <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
-                        <span class="text-[10px] text-slate-500 uppercase block">Calculated VaR</span>
+                        <span class="text-[10px] text-slate-500 uppercase block">Value-at-Risk</span>
                         <strong class="text-sm font-bold text-red-400">$${(m.value_at_risk||0).toLocaleString()}</strong>
                     </div>
+                </div>`}
+                <div class="text-[11px] leading-relaxed text-slate-300">
+                    <span class="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">AI Risk Narrative</span>
+                    ${narrativeHtml}
                 </div>
-                <p class="text-[9px] text-slate-500 text-center">Composite = Fin·${w.fin}% + Ops·${w.ops}% + Comp·${w.comp}% + Geo·${w.geo}%</p>
-                ${(m.narrative && m.narrative !== 'Baseline audit cycle complete.')
-                    ? `<div class="bg-slate-900/70 border-l-2 border-purple-500 pl-3 py-2 text-[11px] leading-relaxed text-slate-300">
-                         <span class="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">AI Risk Narrative</span>
-                         ${m.narrative}
-                       </div>`
-                    : ''}
-                <div class="space-y-2">
-                    ${renderDimension('Financial', m.fin_score, w.fin, m.fin_drivers, m.fin_gaps, m.fin_evidence, 'text-blue-400')}
-                    ${renderDimension('Operational', m.ops_score, w.ops, m.ops_drivers, m.ops_gaps, [], 'text-emerald-400')}
-                    ${renderDimension('Compliance', m.comp_score, w.comp, m.comp_drivers, m.comp_gaps, m.comp_evidence, 'text-amber-400')}
-                    ${renderDimension('Geopolitical', m.geo_score, w.geo, m.geo_drivers, m.geo_gaps, m.geo_evidence, 'text-purple-400')}
-                </div>
-                ${backupsBlock}
-                <div>
-                    <span class="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Cited Sources (provenance):</span>
-                    <ul class="space-y-1">${sourcesList}</ul>
-                </div>
+                ${isTarget ? '' : `<p class="text-[9px] text-slate-500 mt-2">Composite = Fin·${w.fin}% + Ops·${w.ops}% + Comp·${w.comp}% + Geo·${w.geo}%</p>`}
             `;
+
+            // ── Six cards beneath the graph + narrative ──
+            // C2: provenance anchors as clickable links, grouped by field key.
+            const anchorEntries = Object.entries(m.provenance_anchors || {});
+            const sourcesList = anchorEntries.length > 0
+                ? anchorEntries.map(([key, a]) => {
+                    const link = a.source_url
+                        ? `<a href="${a.source_url}" target="_blank" rel="noopener" class="text-blue-400 hover:underline break-words">${a.label} ↗</a>`
+                        : `<span class="text-slate-400">${a.label}</span>`;
+                    return `<li class="mb-1"><span class="font-mono text-slate-500 text-[9px] uppercase block">${key}</span>${link}</li>`;
+                }).join('')
+                : '<li class="text-slate-500 italic">No source data fetched for this entity.</li>';
+
+            // G2: ranked, justified pre-vetted alternatives.
+            const backups = m.backups || [];
+            const backupsBody = backups.length > 0
+                ? `<ol class="space-y-1 list-decimal list-inside">${backups.map(b => `<li class="text-slate-200">${b.name}<span class="text-slate-400"> — ${b.justification || ''}</span></li>`).join('')}</ol>`
+                : '<p class="text-slate-500 italic">No pre-vetted alternatives for this industry.</p>';
+
+            document.getElementById('inspector-cards').innerHTML =
+                  renderDimension('Financial', m.fin_score, w.fin, m.fin_drivers, m.fin_gaps, m.fin_evidence, 'text-blue-400')
+                + renderDimension('Operational', m.ops_score, w.ops, m.ops_drivers, m.ops_gaps, [], 'text-emerald-400')
+                + renderDimension('Compliance', m.comp_score, w.comp, m.comp_drivers, m.comp_gaps, m.comp_evidence, 'text-amber-400')
+                + renderDimension('Geopolitical', m.geo_score, w.geo, m.geo_drivers, m.geo_gaps, m.geo_evidence, 'text-purple-400')
+                + inspectorCard('Pre-vetted Alternatives', 'text-cyan-400', backupsBody)
+                + inspectorCard('Cited Sources (provenance)', 'text-slate-300', `<ul>${sourcesList}</ul>`);
         }
 
         // Compact USD formatter for table cells ($22.0B, $1.1B, $850M ...).
@@ -711,9 +777,12 @@
 
         // ── score TRANSPARENCY CONSOLE MANAGEMENT ──
         let analyticsSort = { key: 'score', dir: -1 };  // default: highest composite first
+        // Dropdown filters on the categorical columns (Category / HQ / Sector).
+        let analyticsFilters = { type: '', country: '', industry: '' };
+
         function sortAnalytics(key) {
             if (analyticsSort.key === key) { analyticsSort.dir *= -1; }
-            else { analyticsSort = { key, dir: (key === 'name' || key === 'type' || key === 'country') ? 1 : -1 }; }
+            else { analyticsSort = { key, dir: (key === 'name' || key === 'type' || key === 'country' || key === 'industry') ? 1 : -1 }; }
             const k = analyticsSort.key, dir = analyticsSort.dir;
             RISK_TABLE_DATA.sort((a, b) => {
                 let av = a[k], bv = b[k];
@@ -723,24 +792,57 @@
             showTransparencyConsole();
         }
 
+        // Build the dropdown options from the distinct values present in the data.
+        function populateAnalyticsFilters() {
+            const cols = [['filter-type', 'type', 'All categories'],
+                          ['filter-country', 'country', 'All HQs'],
+                          ['filter-industry', 'industry', 'All sectors']];
+            cols.forEach(([elId, key, allLabel]) => {
+                const el = document.getElementById(elId);
+                if (!el) return;
+                const values = [...new Set(RISK_TABLE_DATA.map(r => r[key]).filter(Boolean))].sort();
+                el.innerHTML = `<option value="">${allLabel}</option>`
+                    + values.map(v => `<option value="${v}">${v}</option>`).join('');
+            });
+        }
+        function applyAnalyticsFilters() {
+            analyticsFilters = {
+                type: document.getElementById('filter-type')?.value || '',
+                country: document.getElementById('filter-country')?.value || '',
+                industry: document.getElementById('filter-industry')?.value || '',
+            };
+            showTransparencyConsole();
+        }
+        function getFilteredRows() {
+            return RISK_TABLE_DATA.filter(r =>
+                (!analyticsFilters.type || r.type === analyticsFilters.type) &&
+                (!analyticsFilters.country || r.country === analyticsFilters.country) &&
+                (!analyticsFilters.industry || r.industry === analyticsFilters.industry));
+        }
+
         function showTransparencyConsole() {
             const tbody = document.getElementById('analytics-table-body');
-            tbody.innerHTML = RISK_TABLE_DATA.map(r => `
+            const rows = getFilteredRows();
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-slate-500 italic">No vendors match the selected filters.</td></tr>`;
+            } else {
+            tbody.innerHTML = rows.map(r => `
                 <tr onclick="toggleTransparencyDropdown('${r.entity_id}')" class="hover:bg-slate-700/30 transition cursor-pointer border-b border-slate-800">
                     <td class="py-3 pl-2 font-medium text-white flex items-center gap-2"><span id="caret-${r.entity_id}" class="inline-block transition-transform text-slate-500">▶</span> <span class="text-blue-400 hover:underline">${r.name}</span></td>
                     <td class="py-3 uppercase font-mono text-[11px] text-slate-400">${r.type}</td>
                     <td class="py-3 font-mono text-slate-300">${r.country}</td>
+                    <td class="py-3 text-slate-300">${r.industry || '—'}</td>
                     <td class="py-3"><span class="px-2 py-0.5 rounded text-[11px] font-bold ${riskBadgeClass(r.score)}">${r.score}</span></td>
                     <td class="py-3 text-right font-mono text-slate-300">${fmtUSD(r.annual_spend_usd)}</td>
                     <td class="py-3 text-right font-mono text-slate-400">${(r.dependence_pct ?? 0).toFixed(1)}%</td>
                     <td class="py-3 text-right pr-2 font-mono font-bold text-red-400">${fmtUSD(r.value_at_risk)}</td>
                 </tr>
                 <tr id="dropdown-${r.entity_id}" class="hidden bg-slate-900/50">
-                    <td colspan="7" class="p-4">
+                    <td colspan="8" class="p-4">
                         ${(r.meta.narrative && r.meta.narrative !== 'Baseline audit cycle complete.')
                             ? `<div class="mb-3 bg-slate-950 border border-purple-900/40 rounded px-3 py-2 text-[11px] text-slate-300 leading-relaxed">
                                  <span class="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">AI Risk Narrative</span>
-                                 ${r.meta.narrative}
+                                 ${renderNarrative(r.meta.narrative)}
                                </div>`
                             : ''}
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
@@ -764,15 +866,16 @@
                     </td>
                 </tr>
             `).join('');
+            }
 
             const geoContainer = document.getElementById('geo-distribution-container');
             geoContainer.innerHTML = Object.entries(GEOPOLITICAL_WEIGHTS.geo_distribution).map(([country, percentage]) => `
                 <div>
-                    <div class="flex justify-between text-xs font-mono mb-1 text-slate-300">
-                        <span>Territory Code: <strong>${country}</strong></span>
-                        <span>Portfolio Share: ${percentage}%</span>
+                    <div class="flex justify-between text-[11px] font-mono mb-0.5 text-slate-300">
+                        <span><strong>${country}</strong></span>
+                        <span>${percentage}%</span>
                     </div>
-                    <div class="w-full bg-slate-900 h-2 rounded border border-slate-800 overflow-hidden">
+                    <div class="w-full bg-slate-900 h-1.5 rounded border border-slate-800 overflow-hidden">
                         <div class="bg-blue-500 h-full" style="width: ${percentage}%"></div>
                     </div>
                 </div>
@@ -794,20 +897,27 @@
             const trace = {
                 x: rows.map(r => r.score),
                 y: rows.map(r => Number(r.annual_spend_usd) || 0),
-                text: rows.map(r =>
-                    `<b>${r.name}</b><br>Composite: ${r.score}/100`
-                    + `<br>Contract: ${fmtUSD(r.annual_spend_usd)}`
-                    + `<br>Dependence: ${(r.dependence_pct ?? 0).toFixed(1)}%`
-                    + `<br>VaR: ${fmtUSD(r.value_at_risk)}`),
+                // Chart face shows the vendor name only; the full breakdown lives in
+                // the hover tooltip (customdata) so the plot stays readable.
+                text: rows.map(r => r.name),
+                customdata: rows.map(r => [
+                    r.score,
+                    fmtUSD(r.annual_spend_usd),
+                    (r.dependence_pct ?? 0).toFixed(1),
+                    fmtUSD(r.value_at_risk),
+                ]),
                 mode: 'markers+text',
                 type: 'scatter',
                 textposition: 'top center',
-                textfont: { color: '#94a3b8', size: 9 },
-                hovertemplate: '%{text}<extra></extra>',
+                textfont: { color: '#cbd5e1', size: 9 },
+                hovertemplate: '<b>%{text}</b><br>Composite: %{customdata[0]}/100'
+                    + '<br>Contract: %{customdata[1]}'
+                    + '<br>Dependence: %{customdata[2]}%'
+                    + '<br>VaR: %{customdata[3]}<extra></extra>',
                 marker: {
                     size: sizes,
                     color: vars,
-                    colorscale: [[0, '#22c55e'], [0.5, '#eab308'], [1, '#ef4444']],
+                    colorscale: [[0, '#15803d'], [0.5, '#b45309'], [1, '#b91c1c']],
                     showscale: true,
                     colorbar: { title: { text: 'VaR', font: { color: '#94a3b8', size: 10 } },
                                 tickfont: { color: '#94a3b8', size: 9 }, thickness: 10, len: 0.6 },
@@ -887,14 +997,50 @@
                     <td class="py-2.5 uppercase text-slate-400 text-[10px]">${n.group || 'Supplier'}</td>
                     <td class="py-2.5 text-slate-300">${n.meta?.industry || 'General Operations'}</td>
                     <td class="py-2.5 font-mono text-slate-400">${n.meta?.country || 'US'}</td>
-                    <td class="py-2.5 text-right pr-2">
+                    <td class="py-2.5 text-right pr-2 space-x-1">
                         <button onclick="initiateNodeEdit('${n.id}')" class="px-2.5 py-0.5 bg-amber-600/20 text-amber-400 border border-amber-500/30 rounded text-[11px] font-bold hover:bg-amber-600 hover:text-white transition">✏️ Edit</button>
+                        ${n.meta?.is_target
+                            ? '<span class="px-2.5 py-0.5 text-[10px] text-slate-600">target</span>'
+                            : `<button onclick="deleteNode('${n.id}')" class="px-2.5 py-0.5 bg-red-600/20 text-red-400 border border-red-500/30 rounded text-[11px] font-bold hover:bg-red-600 hover:text-white transition">🗑 Delete</button>`}
                     </td>
                 </tr>
             `).join('');
 
             const selector = document.getElementById('form-edge-target');
             selector.innerHTML = VIS_NODES_ARRAY.map(n => `<option value="${n.id}">${n.label} (${n.id})</option>`).join('');
+        }
+
+        // Remove a node and everything that references it, then re-render every view
+        // so the graph, table, scatter, directory and filters stay consistent.
+        function deleteNode(id) {
+            const node = VIS_NODES_ARRAY.find(n => n.id === id);
+            if (!node) return;
+            if (node.meta && node.meta.is_target) {
+                showComingSoon('Deleting the target entity');
+                return;
+            }
+            if (!confirm(`Delete "${node.label}" and its dependency edges from this workspace?`)) return;
+
+            // If the node being deleted is currently open in the edit form, reset it.
+            if (editingNodeId === id) resetNodeForm();
+
+            const dropIdx = VIS_NODES_ARRAY.findIndex(n => n.id === id);
+            if (dropIdx !== -1) VIS_NODES_ARRAY.splice(dropIdx, 1);
+            // Drop edges touching the node (either endpoint).
+            for (let i = VIS_EDGES_ARRAY.length - 1; i >= 0; i--) {
+                if (VIS_EDGES_ARRAY[i].from === id || VIS_EDGES_ARRAY[i].to === id) {
+                    VIS_EDGES_ARRAY.splice(i, 1);
+                }
+            }
+            // Drop its risk-register row.
+            const rowIdx = RISK_TABLE_DATA.findIndex(r => r.entity_id === id);
+            if (rowIdx !== -1) RISK_TABLE_DATA.splice(rowIdx, 1);
+
+            renderLeftToRightNetwork();
+            populateAnalyticsFilters();
+            showTransparencyConsole();
+            renderExposureScatter();
+            renderNodeDirectory();
         }
 
         function initiateNodeEdit(id) {
@@ -952,10 +1098,12 @@
                         matchedTable.name = name;
                         matchedTable.type = type.toUpperCase();
                         matchedTable.country = country;
+                        matchedTable.industry = industry;
                         matchedTable.annual_spend_usd = spend;
                         matchedTable.value_at_risk = varTotal;
                         matchedTable.meta = targetNode.meta;
                     }
+                    populateAnalyticsFilters();
                 }
                 alert(`Node alterations successfully stored!`);
                 resetNodeForm();
@@ -989,9 +1137,10 @@
 
                 RISK_TABLE_DATA.push({
                     entity_id: id, name: name, ticker: "—", type: type.toUpperCase(), country: country,
-                    score: composite, level: "medium", fin: 50.0, ops: 50.0, comp: 50.0, geo: 50.0,
-                    annual_spend_usd: spend, value_at_risk: varTotal, meta: mockNode.meta
+                    industry: industry, score: composite, level: "medium", fin: 50.0, ops: 50.0, comp: 50.0, geo: 50.0,
+                    annual_spend_usd: spend, dependence_pct: 0, value_at_risk: varTotal, meta: mockNode.meta
                 });
+                populateAnalyticsFilters();
 
                 alert(`Node "${name}" successfully compiled and injected!`);
                 document.getElementById('add-node-form').reset();
@@ -1074,6 +1223,7 @@
 
         window.onload = function() {
             renderLeftToRightNetwork();
+            populateAnalyticsFilters();
             showTransparencyConsole();
             renderPlaybooks();
             renderDataRoom();

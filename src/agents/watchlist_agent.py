@@ -174,6 +174,12 @@ def _parse_entities(raw_json: str, target_id: str) -> tuple[list[Entity], list[E
         except ValueError:
             etype = EntityType.SUPPLIER
 
+        # Customers are out of scope: the target (Apple) is the terminal/rightmost
+        # node, so downstream channel entities are dropped here. The seed carries
+        # none; this guard stops the LLM fallback path from reintroducing them.
+        if etype == EntityType.CUSTOMER:
+            continue
+
         depth      = item.get("depth_level", 1)
         importance = float(item.get("importance_score", 5))
 

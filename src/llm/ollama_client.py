@@ -16,7 +16,7 @@ class OllamaClient(BaseLLMClient):
         self.model = model
         self.base_url = base_url.rstrip("/")
 
-    async def generate(
+    async def _generate(
         self,
         prompt: str,
         system: str = "",

@@ -18,7 +18,6 @@ import logging
 import httpx
 from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, RateLimitError
 from src.llm.interface import BaseLLMClient
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,7 @@ class VLLMClient(BaseLLMClient):
             logger.warning(f"Could not resolve model ID from vLLM: {e}. Using '{self.model}'")
             return self.model
 
-    async def generate(
+    async def _generate(
         self,
         prompt: str,
         system: str = "",
@@ -94,7 +93,7 @@ class VLLMClient(BaseLLMClient):
                 f"tokens_in={response.usage.prompt_tokens}, "
                 f"tokens_out={response.usage.completion_tokens}"
             )
-            return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            return text
 
         except APIConnectionError as e:
             msg = (

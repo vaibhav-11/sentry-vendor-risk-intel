@@ -13,8 +13,8 @@ Always ground your analysis in the data provided. Do not hallucinate metrics."""
 WATCHLIST_PROMPT = """You are building a vendor risk watchlist for: {company_name}
 
 Generate a structured JSON list of the company's key third-party relationships across
-{max_depth} levels. Include: direct suppliers, major customers, technology partners,
-logistics providers, and financial counterparties.
+{max_depth} levels. Include: direct suppliers, technology partners, and logistics
+providers. Do NOT include customers — the target company is the terminal node.
 
 Rules:
 - Maximum {max_children} relationships per entity
@@ -28,7 +28,7 @@ Return ONLY valid JSON matching this exact schema:
     {{
       "name": "string",
       "ticker": "string or null",
-      "entity_type": "supplier|customer|partner|logistics|financial",
+      "entity_type": "supplier|partner|logistics|financial",
       "relationship_to_parent": "string (parent entity name)",
       "depth_level": 1,
       "importance_score": 8,
@@ -101,13 +101,19 @@ Compliance Drivers (derived from SEC EDGAR evidence — narrate from these, do n
 Geopolitical Drivers (country-risk index, portfolio HHI, GDELT events — narrate from these):
 {geopolitical_drivers}
 
-Write a concise 3-paragraph risk narrative (max 200 words total):
-1. Current risk status and primary drivers
-2. Key vulnerabilities and early warning signals observed
-3. Recommended mitigation actions
+Write a crisp, scannable risk narrative (max 120 words total) in PLAIN TEXT.
+Do NOT use markdown — no asterisks, no bold, no headings, no "**".
 
-Be specific. Reference the actual data points and drivers provided above. Do not
-fabricate filings, events, or metrics that are not listed."""
+Use exactly this structure:
+Status: <one short sentence on overall risk level and the single biggest driver>
+Key risks:
+- <short bullet referencing a specific driver above>
+- <short bullet referencing a specific driver above>
+- <short bullet, optional>
+Action: <one short sentence on the most important mitigation>
+
+Keep sentences short and specific. Reference the actual drivers and figures provided
+above. Do not fabricate filings, events, or metrics that are not listed."""
 
 # ── Pre-vetted Alternatives Ranking (G2) ──────────────────────────────────────
 
