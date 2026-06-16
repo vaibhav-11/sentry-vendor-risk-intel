@@ -6,6 +6,7 @@ Also calls the LLM to generate per-entity risk narratives in batch.
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from src.models import PipelineState, RiskAlert, AlertSeverity
@@ -14,6 +15,7 @@ from src.graph.supply_chain_graph import build_graph, attach_risk_scores, entiti
 from src.graph.cascading_risk import compute_graph_metrics
 from src.risk.alternatives import attach_alternatives
 from src.llm.interface import get_llm_client
+from src.llm.metrics import add_latency
 from config.prompts import (
     SYSTEM_RISK_ANALYST, ENTITY_NARRATIVE_PROMPT, ALERT_PROMPT
 )
@@ -84,6 +86,7 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     ps = PipelineState(**state)
     ps.stage = "risk_scoring"
+    _t0 = time.perf_counter()
     llm = get_llm_client(ps.llm_backend)
     thresholds = _load_thresholds()
 
@@ -177,7 +180,8 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
 
     if narrative_prompts:
         narratives = await llm.generate_batch(
-            narrative_prompts, system=SYSTEM_RISK_ANALYST, max_tokens=2048
+            narrative_prompts, system=SYSTEM_RISK_ANALYST, max_tokens=2048,
+            label="risk_agent",
         )
         for entity_id, narrative in zip(narrative_entity_ids, narratives):
             ps.risk_scores[entity_id].narrative = narrative
@@ -215,7 +219,8 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
 
     if alert_prompts:
         alert_responses = await llm.generate_batch(
-            alert_prompts, system=SYSTEM_RISK_ANALYST, temperature=0.1
+            alert_prompts, system=SYSTEM_RISK_ANALYST, temperature=0.1,
+            label="risk_agent",
         )
         for entity_id, alert_raw in zip(alert_entity_ids, alert_responses):
             score = ps.risk_scores[entity_id]
@@ -231,4 +236,6 @@ async def risk_node(state: dict[str, Any]) -> dict[str, Any]:
     logger.info(
         f"[Risk] Complete: {len(ps.risk_scores)} scored, {len(ps.alerts)} alerts generated"
     )
+
+    add_latency("risk_agent", time.perf_counter() - _t0)
     return ps.model_dump()

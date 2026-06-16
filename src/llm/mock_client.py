@@ -8,6 +8,7 @@ import json
 import asyncio
 import logging
 from src.llm.interface import BaseLLMClient
+from src.llm.metrics import record_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -384,8 +385,12 @@ class MockLLMClient(BaseLLMClient):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> str:
         await asyncio.sleep(0.05)   # simulate small latency
+        # Mock backend has no real token usage — record zeros so the ledger key
+        # exists and the instrumentation stays inert on the GPU-free path.
+        record_tokens(label, prompt_tokens=0, completion_tokens=0, total_tokens=0)
         prompt_lower = prompt.lower()
 
         # ── Alternatives ranking (G2) ──────────────────────────────────────
@@ -500,11 +505,13 @@ class MockLLMClient(BaseLLMClient):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> list[str]:
         """Process batch sequentially (mock — no concurrency benefit)."""
         results = []
         for prompt in prompts:
             result = await self.generate(prompt, system=system,
-                                         temperature=temperature, max_tokens=max_tokens)
+                                         temperature=temperature, max_tokens=max_tokens,
+                                         label=label)
             results.append(result)
         return results

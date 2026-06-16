@@ -12,6 +12,7 @@ Usage:
 """
 
 import sys
+import time
 import asyncio
 import argparse
 import webbrowser
@@ -154,6 +155,10 @@ async def run_demo(
     ollama_model: str,
     no_browser: bool,
 ) -> None:
+    # Total pipeline wall clock — measured from the top of the entry point so it
+    # spans pre-flight, the LangGraph run, and dashboard write-out.
+    _pipeline_t0 = time.perf_counter()
+
     # Patch settings before importing the pipeline so env overrides take effect
     # even when running in Jupyter / AMD without a .env file present.
     _apply_env_overrides(backend, vllm_url, vllm_model, ollama_url, ollama_model)
@@ -258,6 +263,12 @@ async def run_demo(
                 "  python scripts/generate_demo.py "
                 f"--company \"{company}\" --backend vllm[/dim]"
             )
+
+        # ── Run metrics — latency + token usage summary ────────────────────
+        from src.llm.metrics import set_pipeline_wall_seconds, print_run_metrics
+        set_pipeline_wall_seconds(time.perf_counter() - _pipeline_t0)
+        console.print()
+        print_run_metrics()
     else:
         console.print("[red]✗ No dashboard generated — check errors above[/red]")
         sys.exit(1)

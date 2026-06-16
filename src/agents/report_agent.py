@@ -4,11 +4,13 @@ Generates the executive HTML risk report using the LLM.
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
 from src.models import PipelineState, RiskLevel
 from src.llm.interface import get_llm_client
+from src.llm.metrics import add_latency
 from config.prompts import (
     SYSTEM_RISK_ANALYST, EXECUTIVE_REPORT_PROMPT, CASCADE_SUMMARY_PROMPT
 )
@@ -83,6 +85,7 @@ async def report_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     ps = PipelineState(**state)
     ps.stage = "report"
+    _t0 = time.perf_counter()
     llm = get_llm_client(ps.llm_backend)
 
     critical_count = sum(
@@ -104,7 +107,8 @@ async def report_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        report_html = await llm.generate(prompt, system=SYSTEM_RISK_ANALYST, max_tokens=1500)
+        report_html = await llm.generate(prompt, system=SYSTEM_RISK_ANALYST,
+                                          max_tokens=1500, label="report_agent")
         ps.report_html = report_html
     except Exception as e:
         ps.add_error(f"Report generation failed: {e}")
@@ -112,4 +116,6 @@ async def report_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.error(f"[Report] Error: {e}")
 
     logger.info(f"[Report] Executive report generated ({len(ps.report_html)} chars)")
+
+    add_latency("report_agent", time.perf_counter() - _t0)
     return ps.model_dump()

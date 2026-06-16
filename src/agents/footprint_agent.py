@@ -5,10 +5,12 @@ Runs all fetches with bounded concurrency.
 """
 
 import logging
+import time
 from typing import Any
 
 from src.models import PipelineState
 from src.data_sources.aggregator import aggregate_all_entities
+from src.llm.metrics import add_latency
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,8 @@ async def footprint_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     ps = PipelineState(**state)
     ps.stage = "footprint"
+
+    _t0 = time.perf_counter()
 
     # Only fetch for supply chain entities, not the target itself
     entities_to_fetch = [e for e in ps.entities if e.depth_level > 0]
@@ -42,4 +46,6 @@ async def footprint_node(state: dict[str, Any]) -> dict[str, Any]:
     logger.info(
         f"[Footprint] Complete: {len(ps.footprint_data)}/{len(entities_to_fetch)} entities fetched"
     )
+
+    add_latency("footprint_agent", time.perf_counter() - _t0)
     return ps.model_dump()

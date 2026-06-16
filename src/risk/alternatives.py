@@ -120,7 +120,7 @@ async def attach_alternatives(ps: PipelineState, llm: BaseLLMClient) -> None:
         return
 
     responses = await llm.generate_batch(
-        prompts, system=SYSTEM_RISK_ANALYST, temperature=0.2
+        prompts, system=SYSTEM_RISK_ANALYST, temperature=0.2, label="risk_agent"
     )
     for (eid, candidates), raw in zip(target_ids, responses):
         ps.risk_scores[eid].backups = _parse_ranked(raw, candidates)

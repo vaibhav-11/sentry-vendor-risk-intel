@@ -18,6 +18,7 @@ import logging
 import httpx
 from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, RateLimitError
 from src.llm.interface import BaseLLMClient
+from src.llm.metrics import record_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ class VLLMClient(BaseLLMClient):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> str:
         model = await self._resolve_model()
 
@@ -88,10 +90,18 @@ class VLLMClient(BaseLLMClient):
                 max_tokens=max_tokens,
             )
             text = response.choices[0].message.content or ""
+            usage = response.usage
+            if usage is not None:
+                record_tokens(
+                    label,
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                )
             logger.debug(
                 f"vLLM generate: {len(text)} chars, "
-                f"tokens_in={response.usage.prompt_tokens}, "
-                f"tokens_out={response.usage.completion_tokens}"
+                f"tokens_in={usage.prompt_tokens if usage else 0}, "
+                f"tokens_out={usage.completion_tokens if usage else 0}"
             )
             return text
 
@@ -115,7 +125,8 @@ class VLLMClient(BaseLLMClient):
             logger.warning(f"vLLM rate limit hit — waiting 2s and retrying: {e}")
             await asyncio.sleep(2)
             return await self.generate(prompt, system=system,
-                                        temperature=temperature, max_tokens=max_tokens)
+                                        temperature=temperature, max_tokens=max_tokens,
+                                        label=label)
 
         except Exception as e:
             logger.error(f"vLLM generation error: {type(e).__name__}: {e}")
@@ -127,6 +138,7 @@ class VLLMClient(BaseLLMClient):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> list[str]:
         """
         Fire all prompts concurrently up to BATCH_CONCURRENCY at a time.
@@ -137,7 +149,8 @@ class VLLMClient(BaseLLMClient):
         async def bounded(p: str) -> str:
             async with semaphore:
                 return await self.generate(
-                    p, system=system, temperature=temperature, max_tokens=max_tokens
+                    p, system=system, temperature=temperature, max_tokens=max_tokens,
+                    label=label,
                 )
 
         logger.info(f"vLLM batch: {len(prompts)} prompts, concurrency={BATCH_CONCURRENCY}")

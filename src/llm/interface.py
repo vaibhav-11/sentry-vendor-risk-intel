@@ -29,8 +29,14 @@ class BaseLLMClient(ABC):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> str:
-        """Backend-specific completion implementation."""
+        """
+        Backend-specific completion implementation.
+
+        `label` identifies the calling agent for token accounting; backends pass
+        it to metrics.record_tokens after a successful response.
+        """
         ...
 
     async def generate(
@@ -39,11 +45,12 @@ class BaseLLMClient(ABC):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> str:
         """Generate a single completion, stripping any <think> reasoning blocks."""
         return self._strip_think(
             await self._generate(prompt, system=system, temperature=temperature,
-                                 max_tokens=max_tokens)
+                                 max_tokens=max_tokens, label=label)
         )
 
     @abstractmethod
@@ -53,6 +60,7 @@ class BaseLLMClient(ABC):
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        label: str = "unknown",
     ) -> list[str]:
         """Generate completions for a list of prompts. Backends may parallelise."""
         ...
@@ -62,11 +70,13 @@ class BaseLLMClient(ABC):
         prompt: str,
         system: str = "",
         temperature: float = 0.1,
+        label: str = "unknown",
     ) -> str:
         """Wrapper that instructs the model to return only JSON."""
         json_system = (system + "\n\nIMPORTANT: Respond with valid JSON only. "
                        "No markdown fences, no preamble, no explanation.").strip()
-        return await self.generate(prompt, system=json_system, temperature=temperature)
+        return await self.generate(prompt, system=json_system,
+                                   temperature=temperature, label=label)
 
 
 def get_llm_client(backend: Optional[str] = None) -> BaseLLMClient:

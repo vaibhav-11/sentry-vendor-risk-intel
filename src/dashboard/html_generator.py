@@ -6,12 +6,14 @@ single-file HTML dashboard — no server required, opens in any browser.
 
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 from src.models import PipelineState, RiskLevel
+from src.llm.metrics import add_latency
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -518,6 +520,8 @@ async def dashboard_node(state: dict[str, Any]) -> dict[str, Any]:
     ps = PipelineState(**state)
     ps.stage = "dashboard"
 
+    _t0 = time.perf_counter()
+
     try:
         html = generate_dashboard_html(ps)
         ps.dashboard_html = html
@@ -530,4 +534,5 @@ async def dashboard_node(state: dict[str, Any]) -> dict[str, Any]:
         ps.add_error(f"Dashboard assembly failure: {e}")
         logger.error(f"[Dashboard] Error: {e}", exc_info=True)
 
+    add_latency("dashboard_generator", time.perf_counter() - _t0)
     return ps.model_dump()

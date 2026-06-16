@@ -13,7 +13,10 @@ from typing import Any
 
 from src.models import Entity, EntityRelationship, EntityType, PipelineState
 from src.risk.scorer import normalize_country
+import time
+
 from src.llm.interface import get_llm_client
+from src.llm.metrics import add_latency
 from src.data_sources.ticker_resolver import resolve_entity_tickers
 from src.data_sources.aggregator import load_vendor_registry
 from config.prompts import WATCHLIST_PROMPT, TIER2_EXPANSION_PROMPT, SYSTEM_RISK_ANALYST
@@ -88,7 +91,8 @@ async def _expand_tier2(
             parent_country=parent.get("hq_country", ""),
         )
         try:
-            raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST)
+            raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST,
+                                          label="watchlist_agent")
             clean = re.sub(r"```(?:json)?", "", raw).strip()
             items = json.loads(clean).get("entities", [])
         except Exception as e:
@@ -275,6 +279,8 @@ async def watchlist_node(state: dict[str, Any]) -> dict[str, Any]:
     ps.stage = "watchlist"
     logger.info(f"[Watchlist] Generating supply chain for: {ps.target_company}")
 
+    _t0 = time.perf_counter()
+
     # Create the target entity (depth 0)
     target_id = _slug(ps.target_company)
     target_entity = Entity(
@@ -302,7 +308,8 @@ async def watchlist_node(state: dict[str, Any]) -> dict[str, Any]:
             max_children=settings.max_children_per_node,
         )
         try:
-            raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST)
+            raw = await llm.generate_json(prompt, system=SYSTEM_RISK_ANALYST,
+                                          label="watchlist_agent")
             clean = re.sub(r"```(?:json)?", "", raw).strip()
             tier1_raw = json.loads(clean).get("entities", [])
         except Exception as e:
@@ -352,4 +359,6 @@ async def watchlist_node(state: dict[str, Any]) -> dict[str, Any]:
         f"[Watchlist] Complete: {len(ps.entities)} entities, "
         f"{len(ps.relationships)} relationships"
     )
+
+    add_latency("watchlist_agent", time.perf_counter() - _t0)
     return ps.model_dump()
