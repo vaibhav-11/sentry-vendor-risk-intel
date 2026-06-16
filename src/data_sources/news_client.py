@@ -67,6 +67,14 @@ def _is_risk_relevant(title: str) -> bool:
 
 GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
+# GDELT's free tier rate-limits aggressively. Both GDELT callers
+# (fetch_gdelt_news and fetch_gdelt_country_events) run concurrently across all
+# vendors via asyncio.gather and hit the same endpoint, so they share a single
+# global serializing semaphore — only one GDELT request in flight at a time —
+# plus a post-response cooldown to avoid bursts that trip 429s.
+_GDELT_SEMAPHORE = asyncio.Semaphore(1)
+_GDELT_COOLDOWN_S = 0.5
+
 
 async def fetch_gdelt_news(
     entity_name: str,
@@ -85,7 +93,25 @@ async def fetch_gdelt_news(
     items: list[NewsItem] = []
     async with httpx.AsyncClient(timeout=20) as client:
         try:
-            resp = await client.get(GDELT_URL, params=params)
+            # Serialize against all other GDELT callers, retry transient
+            # rate-limit / server errors with exponential backoff (2s, 4s, 8s),
+            # then cool down before releasing to prevent burst re-entry.
+            async with _GDELT_SEMAPHORE:
+                resp = None
+                for attempt in range(3):
+                    resp = await client.get(GDELT_URL, params=params)
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        if attempt < 2:
+                            backoff = 2 ** (attempt + 1)
+                            logger.warning(
+                                f"GDELT {resp.status_code} for '{entity_name}', "
+                                f"retrying in {backoff}s "
+                                f"(attempt {attempt + 1}/3)"
+                            )
+                            await asyncio.sleep(backoff)
+                            continue
+                    break
+                await asyncio.sleep(_GDELT_COOLDOWN_S)
             resp.raise_for_status()
             data = resp.json()
             articles = data.get("articles", [])
@@ -154,7 +180,25 @@ async def fetch_gdelt_country_events(
     evidence: list[DriverEvidence] = []
     async with httpx.AsyncClient(timeout=30) as client:
         try:
-            resp = await client.get(GDELT_URL, params=params)
+            # Serialize against all other GDELT callers, retry transient
+            # rate-limit / server errors with exponential backoff (2s, 4s, 8s),
+            # then cool down before releasing to prevent burst re-entry.
+            async with _GDELT_SEMAPHORE:
+                resp = None
+                for attempt in range(3):
+                    resp = await client.get(GDELT_URL, params=params)
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        if attempt < 2:
+                            backoff = 2 ** (attempt + 1)
+                            logger.warning(
+                                f"GDELT {resp.status_code} for {name!r}, "
+                                f"retrying in {backoff}s "
+                                f"(attempt {attempt + 1}/3)"
+                            )
+                            await asyncio.sleep(backoff)
+                            continue
+                    break
+                await asyncio.sleep(_GDELT_COOLDOWN_S)
             resp.raise_for_status()
             data = resp.json()
             for art in data.get("articles", [])[:max_articles]:
