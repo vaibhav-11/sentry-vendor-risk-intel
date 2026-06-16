@@ -130,13 +130,32 @@ def _pipeline_token_totals() -> dict[str, int]:
     return totals
 
 
-def print_run_metrics() -> None:
+def print_run_metrics(gpu_monitor=None) -> None:
     """
     Print a structured latency + token-usage summary to stdout, and append a
     timestamped snapshot to logs/run_metrics.json (created if absent).
+
+    If `gpu_monitor` is provided and reports a non-zero peak (i.e. rocm-smi was
+    available and the monitor actually ran), a GPU MEMORY section is printed and
+    the peak VRAM figures are written into the JSON snapshot. Otherwise the GPU
+    section is omitted and the snapshot records `"gpu": null`.
     """
     bar = "═" * 43
     rule = "  " + "─" * 41
+
+    # Resolve GPU figures once: a peak of 0 (or no monitor) means GPU stats are
+    # unavailable and both the printed section and the JSON block are suppressed.
+    gpu_data = None
+    if gpu_monitor is not None:
+        peak = gpu_monitor.peak_mb()
+        if peak > 0:
+            total = gpu_monitor.total_mb()
+            pct = round(100.0 * peak / total, 1) if total > 0 else 0.0
+            gpu_data = {
+                "peak_vram_used_mb": peak,
+                "total_vram_mb": total,
+                "peak_utilisation_pct": pct,
+            }
 
     lat_total = (
         PIPELINE_WALL_SECONDS
@@ -171,14 +190,29 @@ def print_run_metrics() -> None:
         f"  {'PIPELINE TOTAL':<22} "
         f"{totals['prompt_tokens']:<9} {totals['completion_tokens']:<11} {totals['total_tokens']}"
     )
+
+    if gpu_data is not None:
+        lines.append("")
+        lines.append("GPU MEMORY (rocm-smi)")
+        lines.append(
+            f"  {'Peak VRAM used':<22} "
+            f"{gpu_data['peak_vram_used_mb']}Mb / {gpu_data['total_vram_mb']}Mb  "
+            f"({gpu_data['peak_utilisation_pct']:.1f}%)"
+        )
+        lines.append(f"  {'Total VRAM':<22} {gpu_data['total_vram_mb']}Mb")
+
     lines.append(bar)
 
     print("\n".join(lines))
 
-    _append_json_snapshot(lat_total, totals)
+    _append_json_snapshot(lat_total, totals, gpu_data)
 
 
-def _append_json_snapshot(lat_total: float, token_totals: dict[str, int]) -> None:
+def _append_json_snapshot(
+    lat_total: float,
+    token_totals: dict[str, int],
+    gpu_data: dict | None = None,
+) -> None:
     """Append this run's metrics to logs/run_metrics.json as one entry in a list."""
     snapshot = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -196,6 +230,7 @@ def _append_json_snapshot(lat_total: float, token_totals: dict[str, int]) -> Non
             },
             "pipeline_total": token_totals,
         },
+        "gpu": gpu_data,
     }
 
     try:

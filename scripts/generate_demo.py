@@ -173,6 +173,14 @@ async def run_demo(
     elif not result:
         sys.exit(1)
 
+    # Background GPU VRAM monitor — only meaningful on the real vLLM/AMD path.
+    # On every other backend (and if preflight downgraded vllm → mock) it stays
+    # dormant: never started, so no thread, no logs/gpu_memory.log, no overhead.
+    from src.utils.gpu_monitor import GPUMonitor
+    monitor = GPUMonitor()
+    if backend == "vllm":
+        monitor.start()
+
     console.print(Panel.fit(
         f"[bold]Vendor Risk Intel — Demo[/bold]\n"
         f"[dim]Company:[/dim] [cyan]{company}[/cyan]   "
@@ -265,11 +273,13 @@ async def run_demo(
             )
 
         # ── Run metrics — latency + token usage summary ────────────────────
+        monitor.stop()
         from src.llm.metrics import set_pipeline_wall_seconds, print_run_metrics
         set_pipeline_wall_seconds(time.perf_counter() - _pipeline_t0)
         console.print()
-        print_run_metrics()
+        print_run_metrics(monitor)
     else:
+        monitor.stop()
         console.print("[red]✗ No dashboard generated — check errors above[/red]")
         sys.exit(1)
 

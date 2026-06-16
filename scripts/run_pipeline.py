@@ -175,6 +175,13 @@ async def main(
 
     console.print(table)
 
+    # ── Run metrics — latency + token usage summary ────────────────────────────
+    # No GPU monitor on this entry point, so print_run_metrics() runs with
+    # gpu_monitor=None and records "gpu": null in logs/run_metrics.json.
+    from src.llm.metrics import print_run_metrics
+    console.print()
+    print_run_metrics()
+
     if state.errors:
         console.print("\n[yellow]Warnings:[/yellow]")
         for e in state.errors:
